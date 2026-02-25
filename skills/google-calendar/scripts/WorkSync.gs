@@ -193,7 +193,12 @@ function pushToGoogle_(startTime) {
         pushCreate_(sheet, data[i], rowNum, googleCalId, extraProps);
         count++;
       } else if (syncStatus === 'pending_update') {
-        pushUpdate_(sheet, data[i], rowNum, googleCalId, extraProps);
+        // If no googleEventId yet, treat as a create instead
+        if (!data[i][EVT.GOOGLE_EVENT_ID]) {
+          pushCreate_(sheet, data[i], rowNum, googleCalId, extraProps);
+        } else {
+          pushUpdate_(sheet, data[i], rowNum, googleCalId, extraProps);
+        }
         count++;
       } else if (syncStatus === 'pending_delete') {
         pushDelete_(sheet, data[i], rowNum, googleCalId);

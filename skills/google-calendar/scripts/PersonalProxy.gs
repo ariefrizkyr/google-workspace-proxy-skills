@@ -9,6 +9,7 @@ const CONFIG = {
   SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID_HERE',
   API_KEY: 'YOUR_API_KEY_HERE',
   DEFAULT_TIMEZONE_OFFSET: '+07:00',
+  DEFAULT_ORGANIZER_EMAIL: 'yourworkemail@company.com',
   SHEET_NAMES: {
     CALENDARS: 'Calendars',
     EVENTS: 'Events',
@@ -386,7 +387,8 @@ function createEvent_(params) {
   var calId = params.calendarId || getPrimaryCalendarId_();
 
   var extraProps = {};
-  if (params.createMeetLink) extraProps.createMeetLink = true;
+  // Default to creating Google Meet link unless explicitly set to false
+  extraProps.createMeetLink = params.createMeetLink !== false;
   if (params.sendNotifications !== undefined) extraProps.sendNotifications = params.sendNotifications;
   if (params.reminders) extraProps.reminders = params.reminders;
 
@@ -409,8 +411,8 @@ function createEvent_(params) {
     params.endTime || '',                     // I: endTime
     false,                                    // J: isAllDay
     'confirmed',                              // K: status
-    '',                                       // L: organizer
-    '',                                       // M: myRsvp
+    params.organizer || CONFIG.DEFAULT_ORGANIZER_EMAIL, // L: organizer
+    'accepted',                               // M: myRsvp
     attendeesJson,                            // N: attendeesJson
     'default',                                // O: eventType
     params.color || '',                       // P: color
@@ -430,7 +432,7 @@ function createEvent_(params) {
     endTime: params.endTime || '',
     location: params.location || '',
     guests: params.guests || '',
-    createMeetLink: params.createMeetLink || false,
+    createMeetLink: extraProps.createMeetLink,
     kind: 'calendar#event',
     updated: ts
   };
@@ -464,8 +466,8 @@ function createAllDayEvent_(params) {
     params.endDate || params.startDate || '', // I: endTime (date for all-day)
     true,                                     // J: isAllDay
     'confirmed',                              // K: status
-    '',                                       // L: organizer
-    '',                                       // M: myRsvp
+    params.organizer || CONFIG.DEFAULT_ORGANIZER_EMAIL, // L: organizer
+    'accepted',                               // M: myRsvp
     attendeesJson,                            // N: attendeesJson
     'default',                                // O: eventType
     '',                                       // P: color
@@ -505,7 +507,8 @@ function createRecurringEvent_(params) {
   var extraProps = {
     recurrenceRule: params.recurrenceRule || []
   };
-  if (params.createMeetLink) extraProps.createMeetLink = true;
+  // Default to creating Google Meet link unless explicitly set to false
+  extraProps.createMeetLink = params.createMeetLink !== false;
   if (params.sendNotifications !== undefined) extraProps.sendNotifications = params.sendNotifications;
 
   sheet.appendRow([
@@ -520,8 +523,8 @@ function createRecurringEvent_(params) {
     params.endTime || '',                     // I: endTime
     false,                                    // J: isAllDay
     'confirmed',                              // K: status
-    '',                                       // L: organizer
-    '',                                       // M: myRsvp
+    params.organizer || CONFIG.DEFAULT_ORGANIZER_EMAIL, // L: organizer
+    'accepted',                               // M: myRsvp
     attendeesJson,                            // N: attendeesJson
     'default',                                // O: eventType
     '',                                       // P: color
@@ -559,11 +562,29 @@ function createOutOfOffice_(params) {
   };
 
   sheet.appendRow([
-    id, '', calId, '',
-    params.title || 'Out of Office', '', '',
-    params.startTime || '', params.endTime || '',
-    false, 'confirmed', '', '', '', 'outOfOffice', '', '',
-    JSON.stringify(extraProps), 'pending_create', ts, '', 'claude', ''
+    id,                                       // A: sheetEventId
+    '',                                       // B: googleEventId
+    calId,                                    // C: sheetCalId
+    '',                                       // D: googleCalId
+    params.title || 'Out of Office',          // E: title
+    '',                                       // F: description
+    '',                                       // G: location
+    params.startTime || '',                   // H: startTime
+    params.endTime || '',                     // I: endTime
+    false,                                    // J: isAllDay
+    'confirmed',                              // K: status
+    '',                                       // L: organizer
+    '',                                       // M: myRsvp
+    '',                                       // N: attendeesJson
+    'outOfOffice',                            // O: eventType
+    '',                                       // P: color
+    '',                                       // Q: meetLink
+    JSON.stringify(extraProps),                // R: extraPropsJson
+    'pending_create',                         // S: syncStatus
+    ts,                                       // T: updatedAt
+    '',                                       // U: syncedAt
+    'claude',                                 // V: updatedBy
+    ''                                        // W: googleUpdated
   ]);
 
   return {
@@ -593,11 +614,29 @@ function createFocusTime_(params) {
   };
 
   sheet.appendRow([
-    id, '', calId, '',
-    params.title || 'Focus Time', '', '',
-    params.startTime || '', params.endTime || '',
-    false, 'confirmed', '', '', '', 'focusTime', '', '',
-    JSON.stringify(extraProps), 'pending_create', ts, '', 'claude', ''
+    id,                                       // A: sheetEventId
+    '',                                       // B: googleEventId
+    calId,                                    // C: sheetCalId
+    '',                                       // D: googleCalId
+    params.title || 'Focus Time',             // E: title
+    '',                                       // F: description
+    '',                                       // G: location
+    params.startTime || '',                   // H: startTime
+    params.endTime || '',                     // I: endTime
+    false,                                    // J: isAllDay
+    'confirmed',                              // K: status
+    '',                                       // L: organizer
+    '',                                       // M: myRsvp
+    '',                                       // N: attendeesJson
+    'focusTime',                              // O: eventType
+    '',                                       // P: color
+    '',                                       // Q: meetLink
+    JSON.stringify(extraProps),                // R: extraPropsJson
+    'pending_create',                         // S: syncStatus
+    ts,                                       // T: updatedAt
+    '',                                       // U: syncedAt
+    'claude',                                 // V: updatedBy
+    ''                                        // W: googleUpdated
   ]);
 
   return {
@@ -624,6 +663,7 @@ function updateEvent_(params) {
   if (params.endTime !== undefined) sheet.getRange(rowNum, EVT.END_TIME + 1).setValue(params.endTime);
   if (params.color !== undefined) sheet.getRange(rowNum, EVT.COLOR + 1).setValue(params.color);
 
+  // Handle visibility/transparency via extraPropsJson
   if (params.visibility !== undefined || params.transparency !== undefined) {
     var currentExtra = sheet.getRange(rowNum, EVT.EXTRA_PROPS_JSON + 1).getValue();
     var extra = {};
@@ -637,6 +677,7 @@ function updateEvent_(params) {
   sheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
   sheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('claude');
 
+  // Re-read the row to return
   var data = sheet.getRange(rowNum, 1, 1, 23).getValues()[0];
   return formatEventFromArray_(data);
 }
@@ -676,12 +717,14 @@ function addGuest_(params) {
   var attendees = [];
   try { attendees = JSON.parse(currentJson || '[]'); } catch(e) {}
 
+  // Check if already added
   var exists = attendees.some(function(a) { return a.email === params.email; });
   if (!exists) {
     attendees.push({ email: params.email, responseStatus: 'needsAction' });
     sheet.getRange(rowNum, EVT.ATTENDEES_JSON + 1).setValue(JSON.stringify(attendees));
   }
 
+  // Store sendNotifications flag in extraProps
   var currentExtra = sheet.getRange(rowNum, EVT.EXTRA_PROPS_JSON + 1).getValue();
   var extra = {};
   try { extra = JSON.parse(currentExtra || '{}'); } catch(e) {}
@@ -794,13 +837,17 @@ function checkAvailability_(params) {
   var id = uuid_();
   var ts = now_();
   cmdSheet.appendRow([
-    id, 'checkAvailability',
+    id,                                       // commandId
+    'checkAvailability',                      // action
     JSON.stringify({
       emails: params.emails || [],
       startTime: params.startTime || '',
       endTime: params.endTime || ''
-    }),
-    'pending', ts, '', ''
+    }),                                       // params
+    'pending',                                // status
+    ts,                                       // createdAt
+    '',                                       // processedAt
+    ''                                        // result
   ]);
   return { requestId: id, status: 'queued', message: 'Availability check queued. Poll with getCommandResult in ~60 seconds.' };
 }
@@ -810,7 +857,8 @@ function findSlots_(params) {
   var id = uuid_();
   var ts = now_();
   cmdSheet.appendRow([
-    id, 'findSlots',
+    id,                                       // commandId
+    'findSlots',                              // action
     JSON.stringify({
       attendees: params.attendees || [],
       duration: params.duration || 30,
@@ -819,8 +867,11 @@ function findSlots_(params) {
       workingHoursStart: params.workingHoursStart || '09:00',
       workingHoursEnd: params.workingHoursEnd || '17:00',
       preferMorning: params.preferMorning || false
-    }),
-    'pending', ts, '', ''
+    }),                                       // params
+    'pending',                                // status
+    ts,                                       // createdAt
+    '',                                       // processedAt
+    ''                                        // result
   ]);
   return { requestId: id, status: 'queued', message: 'Slot search queued. Poll with getCommandResult in ~60 seconds.' };
 }
