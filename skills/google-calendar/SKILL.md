@@ -79,7 +79,14 @@ The system syncs multiple calendars, each tagged with a **type**:
 - "start syncing Ardian's calendar" → `enableCalendarSync`
 - "stop syncing the project calendar" → `disableCalendarSync`
 
-### 2. Resolve IDs
+### 2. Use exact API parameter names
+
+Always use the exact parameter names from `references/api-actions.md`. Common mistakes to avoid:
+- Use `guests` (NOT `attendees`) for inviting people to events via `createEvent`, `createAllDayEvent`, `createRecurringEvent`
+- Use `status` (NOT `response`) for `rsvpEvent`
+- Use `query` (NOT `search` or `keyword`) for `searchEvents`
+
+### 3. Resolve IDs
 
 Always resolve IDs before any operation — never guess.
 
@@ -88,7 +95,7 @@ Always resolve IDs before any operation — never guess.
 3. If multiple matches, ask the user which one. If no match, say so.
 4. For scheduling with people, use `listCalendars` to find coworker calendar IDs by name/email.
 
-### 3. Handle dates and times
+### 4. Handle dates and times
 
 Convert relative dates/times to ISO 8601 format:
 - Dates: `YYYY-MM-DD` (for all-day events)
@@ -99,7 +106,7 @@ Convert relative dates/times to ISO 8601 format:
 - Default meeting duration is 30 minutes if not specified.
 - Default timezone is Asia/Jakarta (UTC+7) unless user specifies otherwise.
 
-### 4. Smart scheduling workflow
+### 5. Smart scheduling workflow
 
 When user wants to schedule with someone without specifying a time:
 
@@ -110,7 +117,7 @@ When user wants to schedule with someone without specifying a time:
 5. Present the available slots with any warnings (holidays, etc.).
 6. Once user picks a slot, call `createEvent`.
 
-### 5. Present results
+### 6. Present results
 
 **Schedule view:**
 ```
@@ -148,7 +155,7 @@ Which slot works? Or pick a different time.
 - For destructive operations (delete), confirm with the user first.
 - If multiple steps needed (e.g., "schedule 3 meetings"), execute sequentially.
 
-### 6. Out of Office and Focus Time
+### 7. Out of Office and Focus Time
 
 **Out of Office:**
 - Auto-declines conflicting invitations.
@@ -161,7 +168,7 @@ Which slot works? Or pick a different time.
 - Auto-declines new conflicting invitations by default.
 - Default: `declineOnlyNewConflictingInvitations`.
 
-### 7. Holiday awareness
+### 8. Holiday awareness
 
 Events from calendars with type `holiday` are treated as **warnings**, not exclusions:
 - When scheduling, slots overlapping holidays get a score penalty and a warning label.
@@ -169,7 +176,7 @@ Events from calendars with type `holiday` are treated as **warnings**, not exclu
 - Claude should surface the warning and let the user decide whether to proceed.
 - Reason: holidays vary by country, and the HR calendar lists all countries' holidays.
 
-### 8. Recurring event handling
+### 9. Recurring event handling
 
 **Identifying recurring events:** Events that are part of a recurring series have a `recurringEventId` field in their response. This field links all instances to the same parent series.
 
