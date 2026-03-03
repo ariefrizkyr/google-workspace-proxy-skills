@@ -27,6 +27,42 @@ For full API actions reference, see `references/api-actions.md`.
 - IDs are spreadsheet UUIDs, not Google Task IDs.
 - Conflict resolution: last-write-wins. Claude's pending changes push before pulling from Google.
 
+## Parameter names (exact JSON keys)
+
+Use these exact parameter names in JSON — do NOT abbreviate or rename them:
+
+- **`taskListId`** — UUID of the task list (from `listTaskLists` response `id` field)
+- **`taskId`** — UUID of the task (from `listTasks` response `id` field)
+
+### Quick reference
+
+```bash
+# List all task lists
+tasks.sh listTaskLists
+
+# List tasks in a list
+tasks.sh listTasks '{"taskListId": "<list-uuid>"}'
+
+# Create a task (with optional notes and due date)
+tasks.sh createTask '{"taskListId": "<list-uuid>", "title": "Task title", "due": "2026-03-05T00:00:00.000Z"}'
+
+# Update a task
+tasks.sh updateTask '{"taskId": "<task-uuid>", "title": "New title", "due": "2026-03-10T00:00:00.000Z"}'
+
+# Complete / uncomplete a task
+tasks.sh completeTask '{"taskId": "<task-uuid>"}'
+tasks.sh uncompleteTask '{"taskId": "<task-uuid>"}'
+
+# Delete a task
+tasks.sh deleteTask '{"taskId": "<task-uuid>"}'
+
+# Move a task to another list
+tasks.sh moveTask '{"taskId": "<task-uuid>", "destinationTaskList": "<other-list-uuid>"}'
+
+# Clear completed tasks from a list
+tasks.sh clearCompleted '{"taskListId": "<list-uuid>"}'
+```
+
 ## Workflow
 
 ### 1. Map intent to action
@@ -46,7 +82,7 @@ For full API actions reference, see `references/api-actions.md`.
 Always resolve IDs before any operation — never guess.
 
 1. Call `listTaskLists` to get list IDs. Use the first/default list if user doesn't specify one.
-2. For task-specific operations, call `listTasks` and match user's description to a task title (case-insensitive, partial match OK).
+2. For task-specific operations, call `listTasks` with `{"taskListId": "<list-uuid>"}` and match user's description to a task title (case-insensitive, partial match OK).
 3. If multiple matches, ask the user which one. If no match, say so.
 
 ### 3. Handle dates
