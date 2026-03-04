@@ -226,16 +226,17 @@ function pushCreate_(sheet, row, rowNum, googleCalId, extraProps) {
 
   // Set start/end based on all-day vs timed
   if (isAllDay) {
-    eventBody.start = { date: row[EVT.START_TIME] };
+    var startDateStr = formatDateValue_(row[EVT.START_TIME]);
+    var endDateStr = formatDateValue_(row[EVT.END_TIME]) || startDateStr;
+    eventBody.start = { date: startDateStr };
     // For all-day events, end date is exclusive in Google Calendar API
-    var endDate = row[EVT.END_TIME] || row[EVT.START_TIME];
     // If start == end, add 1 day for single all-day event
-    if (endDate === row[EVT.START_TIME]) {
-      var d = new Date(endDate);
+    if (endDateStr === startDateStr) {
+      var d = new Date(endDateStr);
       d.setDate(d.getDate() + 1);
-      endDate = Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+      endDateStr = Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
     }
-    eventBody.end = { date: endDate };
+    eventBody.end = { date: endDateStr };
   } else {
     eventBody.start = { dateTime: row[EVT.START_TIME] };
     eventBody.end = { dateTime: row[EVT.END_TIME] };
@@ -339,14 +340,14 @@ function pushUpdate_(sheet, row, rowNum, googleCalId, extraProps) {
   var isAllDay = String(row[EVT.IS_ALL_DAY]) === 'true' || row[EVT.IS_ALL_DAY] === true;
   if (row[EVT.START_TIME]) {
     if (isAllDay) {
-      patchBody.start = { date: row[EVT.START_TIME] };
+      patchBody.start = { date: formatDateValue_(row[EVT.START_TIME]) };
     } else {
       patchBody.start = { dateTime: row[EVT.START_TIME] };
     }
   }
   if (row[EVT.END_TIME]) {
     if (isAllDay) {
-      patchBody.end = { date: row[EVT.END_TIME] };
+      patchBody.end = { date: formatDateValue_(row[EVT.END_TIME]) };
     } else {
       patchBody.end = { dateTime: row[EVT.END_TIME] };
     }
@@ -1219,6 +1220,21 @@ function cleanupDeletedRows_() {
 
 function getSheet_(name) {
   return SpreadsheetApp.openById(SYNC_CONFIG.SPREADSHEET_ID).getSheetByName(name);
+}
+
+// Format a value to "YYYY-MM-DD" string for all-day events.
+// Google Sheets auto-converts date strings to Date objects, so we need to
+// convert them back to strings before passing to the Calendar API.
+// Must use the spreadsheet's timezone (not UTC) because Sheets stores dates
+// as midnight in the spreadsheet timezone — formatting in UTC shifts by -1 day.
+function formatDateValue_(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    var tz = SpreadsheetApp.openById(SYNC_CONFIG.SPREADSHEET_ID).getSpreadsheetTimeZone();
+    return Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+  }
+  // Already a string like "2026-04-27"
+  return String(val);
 }
 
 function buildCalIdMap_() {
