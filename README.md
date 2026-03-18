@@ -1,6 +1,6 @@
 # Google Workspace Skills for AI Coding Agents
 
-Agent skills that let you manage **Google Tasks**, **Google Calendar**, **Google Drive**, and **Google Sheets** through natural language, right from your terminal.
+Agent skills that let you manage **Google Tasks**, **Google Calendar**, **Google Drive**, **Google Sheets**, and **Google Docs** through natural language, right from your terminal.
 
 > "show my tasks" / "what's on my calendar today" / "schedule a meeting with Sarah at 2pm" / "create a Google Doc called Q1 Report" / "share this file with alice@company.com" / "read the data from my Budget spreadsheet"
 
@@ -8,14 +8,14 @@ Works with **Claude Code**, **Gemini CLI**, **OpenAI Codex CLI**, **Cursor**, an
 
 ## What is this?
 
-These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks, Google Calendar, Google Drive, and Google Sheets. Instead of switching to a browser, you talk to your agent and it handles everything.
+These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks, Google Calendar, Google Drive, Google Sheets, and Google Docs. Instead of switching to a browser, you talk to your agent and it handles everything.
 
 The architecture uses a **spreadsheet-proxy** pattern:
 
 ```
 AI Agent  ->  Shell Script  ->  Apps Script (Personal Gmail)  ->  Google Spreadsheet
                                                                         |
-                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive / Sheets API
+                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive / Sheets / Docs API
 ```
 
 **Why not call the API directly?** Google Workspace APIs require OAuth with browser-based consent flows. This proxy approach uses Apps Script (which has built-in auth) and a shared spreadsheet as the communication layer. Your agent just makes HTTP calls to your personal Apps Script web app. A sync engine on your work account syncs the spreadsheet with the actual APIs every minute.
@@ -90,6 +90,22 @@ The installer handles all path differences automatically. Since all these agents
 - **Drive integration** -- resolve spreadsheets from Drive file IDs for seamless cross-skill workflows
 - **Async proxy** -- all operations route through the work email (personal email may not have access to work spreadsheets)
 
+### Google Docs
+
+- **Read content** -- get flattened document content with element indices, types, text, and styles
+- **Create documents** -- create new Google Docs with titles
+- **Edit text** -- insert text at specific indices, delete content ranges, find & replace across the document
+- **Formatting** -- bold, italic, underline, strikethrough, font size/family, text color, background color, hyperlinks
+- **Paragraph styles** -- headings (H1-H6), title, subtitle, alignment, line spacing, indentation
+- **Lists** -- create bullet lists (8 presets) and numbered lists (6 presets), remove bullets
+- **Tables (10 actions)** -- insert tables, add/delete rows & columns, merge/unmerge cells, set column width, row height, cell styling, pin header rows
+- **Images** -- insert inline images with optional width/height
+- **Document structure** -- page breaks, section breaks, headers, footers, footnotes
+- **Named ranges** -- create, delete, and replace content within named ranges
+- **Drive integration** -- resolve documents from Drive file IDs for seamless cross-skill workflows
+- **Index-based editing** -- content flattening with startIndex/endIndex for precise edits
+- **Async proxy** -- all operations route through the work email (personal email may not have access to work documents)
+
 ## Prerequisites
 
 - At least one supported AI coding agent installed
@@ -163,6 +179,14 @@ Create the required sheet tabs by importing the CSV templates from this repo:
 | `CommandQueue` | `skills/google-sheets/scripts/CommandQueue.csv` |
 | `SyncMeta` | `skills/google-sheets/scripts/SyncMeta.csv` |
 
+**For Google Docs:**
+
+| Sheet Tab | CSV Template |
+| --- | --- |
+| `TrackedDocuments` | `skills/google-docs/scripts/TrackedDocuments.csv` |
+| `CommandQueue` | `skills/google-docs/scripts/CommandQueue.csv` |
+| `SyncMeta` | `skills/google-docs/scripts/SyncMeta.csv` |
+
 > You can use one spreadsheet for all skills (with all sheet tabs) or separate spreadsheets.
 
 ### Step 2: Deploy the Personal Proxy (Apps Script)
@@ -194,6 +218,7 @@ This runs on your **work email** account.
   - For Calendar: Click **Services** (+) > add **Calendar API** (Advanced Service)
   - For Drive: Click **Services** (+) > add **Drive API** (Advanced Service)
   - For Sheets: Click **Services** (+) > add **Sheets API** (Advanced Service)
+  - For Docs: Click **Services** (+) > add **Docs API** (Advanced Service)
 6. Run `initialImport()` once to seed the spreadsheet with your existing data
 7. Run `setupTrigger()` to start the 1-minute sync cycle
 8. Grant all permission prompts
@@ -218,6 +243,10 @@ Edit the shell scripts to add your deployment URL and API key:
 # For Google Sheets — edit sheets.sh:
 #   Replace __GOOGLE_SHEETS_URL__ with your Apps Script deployment URL
 #   Replace __GOOGLE_SHEETS_KEY__ with your API key
+
+# For Google Docs — edit docs.sh:
+#   Replace __GOOGLE_DOCS_URL__ with your Apps Script deployment URL
+#   Replace __GOOGLE_DOCS_KEY__ with your API key
 ```
 
 Or run `./install.sh` again and enter your credentials when prompted.
@@ -236,6 +265,8 @@ Open your AI agent and try:
 > share the report with alice@company.com as editor
 > read the data from my Budget spreadsheet
 > write values to Sheet1!A1:C3
+> show the content of my Q1 Report document
+> insert a heading at the top of the doc
 ```
 
 ## Manual Installation
@@ -248,24 +279,28 @@ cp -r skills/google-tasks ~/.claude/skills/google-tasks
 cp -r skills/google-calendar ~/.claude/skills/google-calendar
 cp -r skills/google-drive ~/.claude/skills/google-drive
 cp -r skills/google-sheets ~/.claude/skills/google-sheets
+cp -r skills/google-docs ~/.claude/skills/google-docs
 
 # Gemini CLI (global)
 cp -r skills/google-tasks ~/.gemini/skills/google-tasks
 cp -r skills/google-calendar ~/.gemini/skills/google-calendar
 cp -r skills/google-drive ~/.gemini/skills/google-drive
 cp -r skills/google-sheets ~/.gemini/skills/google-sheets
+cp -r skills/google-docs ~/.gemini/skills/google-docs
 
 # OpenAI Codex CLI (global)
 cp -r skills/google-tasks ~/.codex/skills/google-tasks
 cp -r skills/google-calendar ~/.codex/skills/google-calendar
 cp -r skills/google-drive ~/.codex/skills/google-drive
 cp -r skills/google-sheets ~/.codex/skills/google-sheets
+cp -r skills/google-docs ~/.codex/skills/google-docs
 
 # Cursor (global)
 cp -r skills/google-tasks ~/.cursor/skills/google-tasks
 cp -r skills/google-calendar ~/.cursor/skills/google-calendar
 cp -r skills/google-drive ~/.cursor/skills/google-drive
 cp -r skills/google-sheets ~/.cursor/skills/google-sheets
+cp -r skills/google-docs ~/.cursor/skills/google-docs
 
 # Make scripts executable
 chmod +x ~/.*/skills/google-*/scripts/*.sh
@@ -286,7 +321,8 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                     │  tasks.sh /  │
                     │ calendar.sh /│
                     │ drive.sh /   │
-                    │ sheets.sh    │
+                    │ sheets.sh /  │
+                    │ docs.sh      │
                     └──────┬──────┘
                            │
                 ┌──────────▼──────────┐
@@ -309,7 +345,7 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                            │
               ┌─────────────────▼──────────────────┐
               │ Google Tasks / Calendar / Drive /   │
-              │ Sheets API (Workspace)             │
+              │ Sheets / Docs API (Workspace)      │
               └────────────────────────────────────┘
 ```
 
@@ -325,13 +361,13 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
 - The Apps Script web app runs as your personal Gmail account
 - The spreadsheet is only shared between your two accounts
 - No data passes through third-party servers
-- **Never commit your configured ****`tasks.sh`****, ****`calendar.sh`****, ****`drive.sh`****, or ****`sheets.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
+- **Never commit your configured ****`tasks.sh`****, ****`calendar.sh`****, ****`drive.sh`****, ****`sheets.sh`****, or ****`docs.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
 
 ## Troubleshooting
 
 | Issue | Solution |
 | --- | --- |
-| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh`/`sheets.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
+| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh`/`sheets.sh`/`docs.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
 | Data not syncing | Run `setupTrigger()` again in the work account's Apps Script. Check Executions log for errors. |
 | "Task list not found" | Run `listTaskLists` first to get valid IDs. The skill uses spreadsheet UUIDs, not Google IDs. |
 | Stale data | The sync runs every minute. If you need immediate sync, use `calendar.sh syncNow` or `drive.sh syncNow`. |
@@ -387,13 +423,24 @@ google-workspace-proxy-skills/
     │   │   └── SyncMeta.csv
     │   └── references/
     │       └── api-actions.md
-    └── google-sheets/
+    ├── google-sheets/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   │   ├── sheets.sh
+    │   │   ├── PersonalProxy.gs
+    │   │   ├── WorkSync.gs
+    │   │   ├── TrackedSpreadsheets.csv
+    │   │   ├── CommandQueue.csv
+    │   │   └── SyncMeta.csv
+    │   └── references/
+    │       └── api-actions.md
+    └── google-docs/
         ├── SKILL.md
         ├── scripts/
-        │   ├── sheets.sh
+        │   ├── docs.sh
         │   ├── PersonalProxy.gs
         │   ├── WorkSync.gs
-        │   ├── TrackedSpreadsheets.csv
+        │   ├── TrackedDocuments.csv
         │   ├── CommandQueue.csv
         │   └── SyncMeta.csv
         └── references/
