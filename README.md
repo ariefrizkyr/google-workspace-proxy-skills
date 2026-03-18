@@ -1,21 +1,21 @@
 # Google Workspace Skills for AI Coding Agents
 
-Agent skills that let you manage **Google Tasks**, **Google Calendar**, and **Google Drive** through natural language, right from your terminal.
+Agent skills that let you manage **Google Tasks**, **Google Calendar**, **Google Drive**, and **Google Sheets** through natural language, right from your terminal.
 
-> "show my tasks" / "what's on my calendar today" / "schedule a meeting with Sarah at 2pm" / "create a Google Doc called Q1 Report" / "share this file with alice@company.com"
+> "show my tasks" / "what's on my calendar today" / "schedule a meeting with Sarah at 2pm" / "create a Google Doc called Q1 Report" / "share this file with alice@company.com" / "read the data from my Budget spreadsheet"
 
 Works with **Claude Code**, **Gemini CLI**, **OpenAI Codex CLI**, **Cursor**, and any agent that supports the [Agent Skills](https://agentskills.io/specification) standard.
 
 ## What is this?
 
-These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks, Google Calendar, and Google Drive. Instead of switching to a browser, you talk to your agent and it handles everything.
+These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks, Google Calendar, Google Drive, and Google Sheets. Instead of switching to a browser, you talk to your agent and it handles everything.
 
 The architecture uses a **spreadsheet-proxy** pattern:
 
 ```
 AI Agent  ->  Shell Script  ->  Apps Script (Personal Gmail)  ->  Google Spreadsheet
                                                                         |
-                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive API
+                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive / Sheets API
 ```
 
 **Why not call the API directly?** Google Workspace APIs require OAuth with browser-based consent flows. This proxy approach uses Apps Script (which has built-in auth) and a shared spreadsheet as the communication layer. Your agent just makes HTTP calls to your personal Apps Script web app. A sync engine on your work account syncs the spreadsheet with the actual APIs every minute.
@@ -73,6 +73,22 @@ The installer handles all path differences automatically. Since all these agents
 - **Shared Drives** -- list accessible shared drives
 - **Storage** -- check quota and usage, empty trash
 - **Selective sync** -- only tracks files you create or discover (Drive has millions of files)
+
+### Google Sheets
+
+- **Read data** -- read single/multiple ranges, get all sheet data, list sheets/tabs, get spreadsheet metadata
+- **Write data** -- write to single/multiple ranges, append rows, clear ranges
+- **Sheet management** -- add, delete, duplicate, rename sheets, freeze rows/columns, hide sheets
+- **Row/column operations** -- insert, delete, move, resize rows & columns, auto-resize
+- **Formatting** -- bold, italic, font size/family, colors, alignment, borders, merge/unmerge cells
+- **Data operations** -- sort ranges, find & replace (with regex), conditional formatting, data validation
+- **Named ranges** -- create and delete named ranges
+- **Protection** -- protect/unprotect ranges with editor lists or warning-only mode
+- **Charts** -- add, update, delete embedded charts (16 chart types)
+- **Filters** -- set/clear basic filters, create/delete filter views
+- **Pivot tables** -- create pivot tables with rows, columns, values, and filters
+- **Drive integration** -- resolve spreadsheets from Drive file IDs for seamless cross-skill workflows
+- **Async proxy** -- all operations route through the work email (personal email may not have access to work spreadsheets)
 
 ## Prerequisites
 
@@ -139,6 +155,14 @@ Create the required sheet tabs by importing the CSV templates from this repo:
 | `CommandQueue` | `skills/google-drive/scripts/CommandQueue.csv` |
 | `SyncMeta` | `skills/google-drive/scripts/SyncMeta.csv` |
 
+**For Google Sheets:**
+
+| Sheet Tab | CSV Template |
+| --- | --- |
+| `TrackedSpreadsheets` | `skills/google-sheets/scripts/TrackedSpreadsheets.csv` |
+| `CommandQueue` | `skills/google-sheets/scripts/CommandQueue.csv` |
+| `SyncMeta` | `skills/google-sheets/scripts/SyncMeta.csv` |
+
 > You can use one spreadsheet for all skills (with all sheet tabs) or separate spreadsheets.
 
 ### Step 2: Deploy the Personal Proxy (Apps Script)
@@ -169,6 +193,7 @@ This runs on your **work email** account.
   - For Tasks: Click **Services** (+) > add **Tasks API**
   - For Calendar: Click **Services** (+) > add **Calendar API** (Advanced Service)
   - For Drive: Click **Services** (+) > add **Drive API** (Advanced Service)
+  - For Sheets: Click **Services** (+) > add **Sheets API** (Advanced Service)
 6. Run `initialImport()` once to seed the spreadsheet with your existing data
 7. Run `setupTrigger()` to start the 1-minute sync cycle
 8. Grant all permission prompts
@@ -189,6 +214,10 @@ Edit the shell scripts to add your deployment URL and API key:
 # For Google Drive — edit drive.sh:
 #   Replace __GOOGLE_DRIVE_URL__ with your Apps Script deployment URL
 #   Replace __GOOGLE_DRIVE_KEY__ with your API key
+
+# For Google Sheets — edit sheets.sh:
+#   Replace __GOOGLE_SHEETS_URL__ with your Apps Script deployment URL
+#   Replace __GOOGLE_SHEETS_KEY__ with your API key
 ```
 
 Or run `./install.sh` again and enter your credentials when prompted.
@@ -205,6 +234,8 @@ Open your AI agent and try:
 > show my Drive files
 > create a Google Doc called Q1 Report
 > share the report with alice@company.com as editor
+> read the data from my Budget spreadsheet
+> write values to Sheet1!A1:C3
 ```
 
 ## Manual Installation
@@ -216,21 +247,25 @@ If you prefer not to use the installer:
 cp -r skills/google-tasks ~/.claude/skills/google-tasks
 cp -r skills/google-calendar ~/.claude/skills/google-calendar
 cp -r skills/google-drive ~/.claude/skills/google-drive
+cp -r skills/google-sheets ~/.claude/skills/google-sheets
 
 # Gemini CLI (global)
 cp -r skills/google-tasks ~/.gemini/skills/google-tasks
 cp -r skills/google-calendar ~/.gemini/skills/google-calendar
 cp -r skills/google-drive ~/.gemini/skills/google-drive
+cp -r skills/google-sheets ~/.gemini/skills/google-sheets
 
 # OpenAI Codex CLI (global)
 cp -r skills/google-tasks ~/.codex/skills/google-tasks
 cp -r skills/google-calendar ~/.codex/skills/google-calendar
 cp -r skills/google-drive ~/.codex/skills/google-drive
+cp -r skills/google-sheets ~/.codex/skills/google-sheets
 
 # Cursor (global)
 cp -r skills/google-tasks ~/.cursor/skills/google-tasks
 cp -r skills/google-calendar ~/.cursor/skills/google-calendar
 cp -r skills/google-drive ~/.cursor/skills/google-drive
+cp -r skills/google-sheets ~/.cursor/skills/google-sheets
 
 # Make scripts executable
 chmod +x ~/.*/skills/google-*/scripts/*.sh
@@ -248,9 +283,10 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                     └──────┬───────┘
                            │ HTTP POST (curl)
                     ┌──────▼──────┐
-                    │  tasks.sh / │
-                    │ calendar.sh │
-                    │  / drive.sh │
+                    │  tasks.sh /  │
+                    │ calendar.sh /│
+                    │ drive.sh /   │
+                    │ sheets.sh    │
                     └──────┬──────┘
                            │
                 ┌──────────▼──────────┐
@@ -272,8 +308,8 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                 └──────────┬──────────┘
                            │
               ┌─────────────────▼──────────────────┐
-              │ Google Tasks / Calendar / Drive API │
-              │ (Workspace)                        │
+              │ Google Tasks / Calendar / Drive /   │
+              │ Sheets API (Workspace)             │
               └────────────────────────────────────┘
 ```
 
@@ -289,13 +325,13 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
 - The Apps Script web app runs as your personal Gmail account
 - The spreadsheet is only shared between your two accounts
 - No data passes through third-party servers
-- **Never commit your configured ****`tasks.sh`****, ****`calendar.sh`****, or ****`drive.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
+- **Never commit your configured ****`tasks.sh`****, ****`calendar.sh`****, ****`drive.sh`****, or ****`sheets.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
 
 ## Troubleshooting
 
 | Issue | Solution |
 | --- | --- |
-| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
+| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh`/`sheets.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
 | Data not syncing | Run `setupTrigger()` again in the work account's Apps Script. Check Executions log for errors. |
 | "Task list not found" | Run `listTaskLists` first to get valid IDs. The skill uses spreadsheet UUIDs, not Google IDs. |
 | Stale data | The sync runs every minute. If you need immediate sync, use `calendar.sh syncNow` or `drive.sh syncNow`. |
@@ -338,13 +374,24 @@ google-workspace-proxy-skills/
     │   │   └── SyncMeta.csv
     │   └── references/
     │       └── api-actions.md
-    └── google-drive/
+    ├── google-drive/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   │   ├── drive.sh
+    │   │   ├── PersonalProxy.gs
+    │   │   ├── WorkSync.gs
+    │   │   ├── Files.csv
+    │   │   ├── CommandQueue.csv
+    │   │   └── SyncMeta.csv
+    │   └── references/
+    │       └── api-actions.md
+    └── google-sheets/
         ├── SKILL.md
         ├── scripts/
-        │   ├── drive.sh
+        │   ├── sheets.sh
         │   ├── PersonalProxy.gs
         │   ├── WorkSync.gs
-        │   ├── Files.csv
+        │   ├── TrackedSpreadsheets.csv
         │   ├── CommandQueue.csv
         │   └── SyncMeta.csv
         └── references/
@@ -353,23 +400,45 @@ google-workspace-proxy-skills/
 
 ## Contributing
 
-Contributions are welcome! Here's how to get started:
+Contributions are welcome! This project uses a **branch-based workflow** with protected branches.
 
-1. **Fork** the repository
-2. **Create a branch** for your feature or fix:
-```bash
-   git checkout -b feature/my-feature
+### Branch Strategy
+
 ```
-3. **Make your changes.** Key areas where help is appreciated:
-  - Improving the sync engine reliability
-  - Adding support for more Google Workspace APIs (Gmail, etc.)
-  - Adding more AI agent targets to the installer
-  - Better error handling and retry logic
-  - Supporting other timezone defaults
-  - Writing tests for the Apps Script code
-  - Improving the installer for Windows/Linux
+contributor → feat/xxx or fix/yyy → PR to dev → review & merge → PR from dev to main
+```
+
+- **`main`** -- production branch. Protected. Only the maintainer can merge PRs into `main`.
+- **`dev`** -- integration/testing branch. Protected. Contributors open PRs to `dev`.
+- **Feature/fix branches** -- created by contributors from `dev`.
+
+### How to Contribute
+
+1. **Fork** the repository and clone it locally
+2. **Create a branch** from `dev` for your feature or fix:
+   ```bash
+   git checkout dev
+   git pull origin dev
+   git checkout -b feat/my-feature
+   ```
+3. **Make your changes** following the guidelines below
 4. **Test your changes** by deploying the Apps Scripts and verifying the skill works end-to-end
-5. **Submit a pull request** with a clear description of what you changed and why
+5. **Push** your branch and open a **Pull Request to `dev`** (not `main`):
+   ```bash
+   git push origin feat/my-feature
+   ```
+   Then create a PR targeting the `dev` branch on GitHub.
+6. **Address review feedback** -- the maintainer will review your PR on the `dev` branch
+7. Once approved and merged to `dev`, the maintainer will promote changes from `dev` to `main`
+
+### Branch Naming Conventions
+
+| Prefix | Use for | Example |
+| --- | --- | --- |
+| `feat/` | New features or skills | `feat/google-gmail-skill` |
+| `fix/` | Bug fixes | `fix/sync-lock-timeout` |
+| `docs/` | Documentation changes | `docs/update-setup-guide` |
+| `refactor/` | Code refactoring | `refactor/worksync-helpers` |
 
 ### Guidelines
 
@@ -379,6 +448,7 @@ Contributions are welcome! Here's how to get started:
 - Follow the existing code style (Apps Script-compatible ES5 with JSDoc where helpful).
 - Update the relevant `api-actions.md` if you add new actions.
 - Update `SKILL.md` if you change the skill's behavior or add new capabilities.
+- Update `install.sh` if you add a new skill (selection menu, credentials, verification, setup guide).
 
 ### Ideas for Contributions
 
