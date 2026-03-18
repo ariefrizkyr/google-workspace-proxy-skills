@@ -329,6 +329,38 @@ configure_credentials() {
       fi
     done
     print_step "Configured drive.sh credentials across all agents"
+
+  elif [[ "$skill_name" == "google-sheets" ]]; then
+    echo -e "  ${BLUE}--- Configure Google Sheets credentials ---${NC}"
+    echo ""
+    echo "  If you've already set up the Apps Script backend, enter your"
+    echo "  credentials now. Otherwise, press Enter to skip (you can edit later)."
+    echo ""
+    read -rp "    Apps Script Web App URL (or Enter to skip): " web_app_url
+
+    if [[ -z "$web_app_url" ]]; then
+      print_info "Skipped. You'll configure this after the backend setup."
+      return
+    fi
+
+    read -rp "    API Key: " api_key
+
+    if [[ -z "$api_key" ]]; then
+      print_warn "No API key provided. Skipping configuration."
+      return
+    fi
+
+    for agent_idx in "${SELECTED_AGENTS[@]}"; do
+      local skills_dir
+      skills_dir="$(get_skills_dir "$agent_idx")"
+      local script_file="${skills_dir}/google-sheets/scripts/sheets.sh"
+      if [[ -f "$script_file" ]]; then
+        sed -i.bak "s|__GOOGLE_SHEETS_URL__|${web_app_url}|g" "$script_file"
+        sed -i.bak "s|__GOOGLE_SHEETS_KEY__|${api_key}|g" "$script_file"
+        rm -f "${script_file}.bak"
+      fi
+    done
+    print_step "Configured sheets.sh credentials across all agents"
   fi
 }
 
@@ -352,6 +384,8 @@ verify_all() {
         script_file="${skills_dir}/${skill}/scripts/calendar.sh"
       elif [[ "$skill" == "google-drive" ]]; then
         script_file="${skills_dir}/${skill}/scripts/drive.sh"
+      elif [[ "$skill" == "google-sheets" ]]; then
+        script_file="${skills_dir}/${skill}/scripts/sheets.sh"
       fi
 
       if [[ ! -f "$script_file" ]]; then
@@ -381,6 +415,8 @@ show_setup_guide() {
         script_file="${skills_dir}/${skill}/scripts/calendar.sh"
       elif [[ "$skill" == "google-drive" ]]; then
         script_file="${skills_dir}/${skill}/scripts/drive.sh"
+      elif [[ "$skill" == "google-sheets" ]]; then
+        script_file="${skills_dir}/${skill}/scripts/sheets.sh"
       fi
       if [[ -f "$script_file" ]] && grep -q '__GOOGLE_' "$script_file" 2>/dev/null; then
         has_unconfigured=true
@@ -433,6 +469,13 @@ show_setup_guide() {
         echo -e "      ${DIM}- SyncMeta     (import from skills/google-drive/scripts/SyncMeta.csv)${NC}"
         echo ""
       fi
+      if [[ "$skill" == "google-sheets" ]]; then
+        echo "    For Google Sheets, create these sheet tabs:"
+        echo -e "      ${DIM}- TrackedSpreadsheets (import from skills/google-sheets/scripts/TrackedSpreadsheets.csv)${NC}"
+        echo -e "      ${DIM}- CommandQueue        (import from skills/google-sheets/scripts/CommandQueue.csv)${NC}"
+        echo -e "      ${DIM}- SyncMeta            (import from skills/google-sheets/scripts/SyncMeta.csv)${NC}"
+        echo ""
+      fi
     done
 
     echo -e "  ${BOLD}Step 2: Deploy the Personal Proxy (your personal Gmail)${NC}"
@@ -449,6 +492,9 @@ show_setup_guide() {
       fi
       if [[ "$skill" == "google-drive" ]]; then
         echo "    c. Paste the contents of: skills/google-drive/scripts/PersonalProxy.gs"
+      fi
+      if [[ "$skill" == "google-sheets" ]]; then
+        echo "    c. Paste the contents of: skills/google-sheets/scripts/PersonalProxy.gs"
       fi
     done
 
@@ -477,6 +523,10 @@ show_setup_guide() {
       if [[ "$skill" == "google-drive" ]]; then
         echo "    c. Paste the contents of: skills/google-drive/scripts/WorkSync.gs"
         echo "    d. Click Services (+) > add Drive API (Advanced Service)"
+      fi
+      if [[ "$skill" == "google-sheets" ]]; then
+        echo "    c. Paste the contents of: skills/google-sheets/scripts/WorkSync.gs"
+        echo "    d. Click Services (+) > add Sheets API (Advanced Service)"
       fi
     done
 
@@ -509,6 +559,11 @@ show_setup_guide() {
           echo -e "      ${DIM}${skills_dir}/google-drive/scripts/drive.sh${NC}"
           echo "        Replace __GOOGLE_DRIVE_URL__ with your deployment URL"
           echo "        Replace __GOOGLE_DRIVE_KEY__ with your API key"
+        fi
+        if [[ "$skill" == "google-sheets" ]]; then
+          echo -e "      ${DIM}${skills_dir}/google-sheets/scripts/sheets.sh${NC}"
+          echo "        Replace __GOOGLE_SHEETS_URL__ with your deployment URL"
+          echo "        Replace __GOOGLE_SHEETS_KEY__ with your API key"
         fi
       done
     done
@@ -552,6 +607,10 @@ show_setup_guide() {
         echo '    > "show my Drive files"'
         echo '    > "create a Google Doc called Q1 Report"'
       fi
+      if [[ "$skill" == "google-sheets" ]]; then
+        echo '    > "read the data from my Budget spreadsheet"'
+        echo '    > "write values to Sheet1!A1:C3"'
+      fi
     done
     echo ""
   done
@@ -577,22 +636,28 @@ echo ""
 echo "  1) Google Tasks only"
 echo "  2) Google Calendar only"
 echo "  3) Google Drive only"
-echo "  4) Tasks + Calendar"
-echo "  5) Tasks + Drive"
-echo "  6) Calendar + Drive"
-echo "  7) All three (recommended)"
+echo "  4) Google Sheets only"
+echo "  5) Tasks + Calendar"
+echo "  6) Tasks + Drive"
+echo "  7) Calendar + Drive"
+echo "  8) Drive + Sheets"
+echo "  9) Tasks + Calendar + Drive"
+echo "  10) All four (recommended)"
 echo ""
-read -rp "  Choose [1-7] (default: 7): " skill_choice
+read -rp "  Choose [1-10] (default: 10): " skill_choice
 
 SELECTED_SKILLS=()
-case "${skill_choice:-7}" in
+case "${skill_choice:-10}" in
   1) SELECTED_SKILLS=("google-tasks") ;;
   2) SELECTED_SKILLS=("google-calendar") ;;
   3) SELECTED_SKILLS=("google-drive") ;;
-  4) SELECTED_SKILLS=("google-tasks" "google-calendar") ;;
-  5) SELECTED_SKILLS=("google-tasks" "google-drive") ;;
-  6) SELECTED_SKILLS=("google-calendar" "google-drive") ;;
-  7) SELECTED_SKILLS=("google-tasks" "google-calendar" "google-drive") ;;
+  4) SELECTED_SKILLS=("google-sheets") ;;
+  5) SELECTED_SKILLS=("google-tasks" "google-calendar") ;;
+  6) SELECTED_SKILLS=("google-tasks" "google-drive") ;;
+  7) SELECTED_SKILLS=("google-calendar" "google-drive") ;;
+  8) SELECTED_SKILLS=("google-drive" "google-sheets") ;;
+  9) SELECTED_SKILLS=("google-tasks" "google-calendar" "google-drive") ;;
+  10) SELECTED_SKILLS=("google-tasks" "google-calendar" "google-drive" "google-sheets") ;;
   *)
     print_error "Invalid choice"
     exit 1
