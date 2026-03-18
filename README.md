@@ -1,21 +1,21 @@
 # Google Workspace Skills for AI Coding Agents
 
-Agent skills that let you manage **Google Tasks** and **Google Calendar** through natural language, right from your terminal.
+Agent skills that let you manage **Google Tasks**, **Google Calendar**, and **Google Drive** through natural language, right from your terminal.
 
-> "show my tasks" / "what's on my calendar today" / "schedule a meeting with Sarah at 2pm" / "remind me to review the PR tomorrow"
+> "show my tasks" / "what's on my calendar today" / "schedule a meeting with Sarah at 2pm" / "create a Google Doc called Q1 Report" / "share this file with alice@company.com"
 
 Works with **Claude Code**, **Gemini CLI**, **OpenAI Codex CLI**, **Cursor**, and any agent that supports the [Agent Skills](https://agentskills.io/specification) standard.
 
 ## What is this?
 
-These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks and Google Calendar. Instead of switching to a browser, you talk to your agent and it handles everything.
+These are [Agent Skills](https://agentskills.io/specification) that give your AI coding agent the ability to read and write your Google Tasks, Google Calendar, and Google Drive. Instead of switching to a browser, you talk to your agent and it handles everything.
 
 The architecture uses a **spreadsheet-proxy** pattern:
 
 ```
 AI Agent  ->  Shell Script  ->  Apps Script (Personal Gmail)  ->  Google Spreadsheet
                                                                         |
-                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar API
+                                                          Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive API
 ```
 
 **Why not call the API directly?** Google Workspace APIs require OAuth with browser-based consent flows. This proxy approach uses Apps Script (which has built-in auth) and a shared spreadsheet as the communication layer. Your agent just makes HTTP calls to your personal Apps Script web app. A sync engine on your work account syncs the spreadsheet with the actual APIs every minute.
@@ -58,11 +58,27 @@ The installer handles all path differences automatically. Since all these agents
 - **Recurring event support** -- update/delete single instances or entire series
 - **Search** across all synced calendars
 
+### Google Drive
+
+- **Browse** files, folders, and recent files
+- **Create** folders, text files, Google Docs, Sheets, and Slides
+- **Search** across your entire Drive with full-text search
+- **Organize** -- rename, move, copy, star, trash, and restore files
+- **Share** files with people (editor, viewer, commenter roles)
+- **Permissions** -- set/remove public access, view who has access
+- **Export** Google Workspace files to PDF, DOCX, XLSX, CSV, PPTX, TXT, HTML, PNG, SVG
+- **Content** -- read file contents (text files and Google Workspace files)
+- **Revisions** -- view revision history and specific revisions
+- **Comments** -- list, add, delete comments and replies on files
+- **Shared Drives** -- list accessible shared drives
+- **Storage** -- check quota and usage, empty trash
+- **Selective sync** -- only tracks files you create or discover (Drive has millions of files)
+
 ## Prerequisites
 
 - At least one supported AI coding agent installed
 - A **personal Gmail account** (for the proxy Apps Script)
-- A **Google Workspace account** (for Tasks/Calendar access)
+- A **Google Workspace account** (for Tasks/Calendar/Drive access)
 - `curl` and `jq` installed on your machine
 - A Google Spreadsheet shared between both accounts
 
@@ -78,7 +94,7 @@ The installer will walk you through:
 
 1. **Agent selection** -- pick which AI agent(s) you use (or all of them)
 2. **Scope** -- install globally (all projects) or to the current project only
-3. **Skill selection** -- Google Tasks, Google Calendar, or both
+3. **Skill selection** -- Google Tasks, Google Calendar, Google Drive, or any combination
 4. **Credentials** -- optionally configure your Apps Script URL and API key
 5. **Setup guide** -- step-by-step instructions to set up the Google Apps Script backend
 
@@ -115,7 +131,15 @@ Create the required sheet tabs by importing the CSV templates from this repo:
 | `CommandQueue` | `skills/google-calendar/scripts/CommandQueue.csv` |
 | `SyncMeta` | `skills/google-calendar/scripts/SyncMeta.csv` |
 
-> You can use one spreadsheet for both skills (with all sheet tabs) or separate spreadsheets.
+**For Google Drive:**
+
+| Sheet Tab | CSV Template |
+| --- | --- |
+| `Files` | `skills/google-drive/scripts/Files.csv` |
+| `CommandQueue` | `skills/google-drive/scripts/CommandQueue.csv` |
+| `SyncMeta` | `skills/google-drive/scripts/SyncMeta.csv` |
+
+> You can use one spreadsheet for all skills (with all sheet tabs) or separate spreadsheets.
 
 ### Step 2: Deploy the Personal Proxy (Apps Script)
 
@@ -123,7 +147,7 @@ This runs on your **personal Gmail** account.
 
 1. Go to [script.google.com](https://script.google.com) (logged in as personal Gmail)
 2. Create a new project
-3. Paste the contents of `skills/google-tasks/scripts/PersonalProxy.gs` (or the calendar version)
+3. Paste the contents of `skills/google-tasks/scripts/PersonalProxy.gs` (or the calendar/drive version)
 4. Update `CONFIG.SPREADSHEET_ID` with your spreadsheet ID
 5. Set `CONFIG.API_KEY` to a random secret string (e.g., generate with `uuidgen`)
 6. Deploy as web app:
@@ -139,11 +163,12 @@ This runs on your **work email** account.
 
 1. Go to [script.google.com](https://script.google.com) (logged in as work email)
 2. Create a new project
-3. Paste the contents of `skills/google-tasks/scripts/WorkSync.gs` (or the calendar version)
+3. Paste the contents of `skills/google-tasks/scripts/WorkSync.gs` (or the calendar/drive version)
 4. Update `SYNC_CONFIG.SPREADSHEET_ID` with your spreadsheet ID
 5. **Enable the API service:**
   - For Tasks: Click **Services** (+) > add **Tasks API**
   - For Calendar: Click **Services** (+) > add **Calendar API** (Advanced Service)
+  - For Drive: Click **Services** (+) > add **Drive API** (Advanced Service)
 6. Run `initialImport()` once to seed the spreadsheet with your existing data
 7. Run `setupTrigger()` to start the 1-minute sync cycle
 8. Grant all permission prompts
@@ -160,6 +185,10 @@ Edit the shell scripts to add your deployment URL and API key:
 # For Google Calendar — edit calendar.sh:
 #   Replace __GOOGLE_CALENDAR_URL__ with your Apps Script deployment URL
 #   Replace __GOOGLE_CALENDAR_KEY__ with your API key
+
+# For Google Drive — edit drive.sh:
+#   Replace __GOOGLE_DRIVE_URL__ with your Apps Script deployment URL
+#   Replace __GOOGLE_DRIVE_KEY__ with your API key
 ```
 
 Or run `./install.sh` again and enter your credentials when prompted.
@@ -173,6 +202,9 @@ Open your AI agent and try:
 > what's on my calendar today
 > create a task to review the PR by Friday
 > schedule a 30-min meeting with sarah@company.com tomorrow
+> show my Drive files
+> create a Google Doc called Q1 Report
+> share the report with alice@company.com as editor
 ```
 
 ## Manual Installation
@@ -183,18 +215,22 @@ If you prefer not to use the installer:
 # Claude Code (global)
 cp -r skills/google-tasks ~/.claude/skills/google-tasks
 cp -r skills/google-calendar ~/.claude/skills/google-calendar
+cp -r skills/google-drive ~/.claude/skills/google-drive
 
 # Gemini CLI (global)
 cp -r skills/google-tasks ~/.gemini/skills/google-tasks
 cp -r skills/google-calendar ~/.gemini/skills/google-calendar
+cp -r skills/google-drive ~/.gemini/skills/google-drive
 
 # OpenAI Codex CLI (global)
 cp -r skills/google-tasks ~/.codex/skills/google-tasks
 cp -r skills/google-calendar ~/.codex/skills/google-calendar
+cp -r skills/google-drive ~/.codex/skills/google-drive
 
 # Cursor (global)
 cp -r skills/google-tasks ~/.cursor/skills/google-tasks
 cp -r skills/google-calendar ~/.cursor/skills/google-calendar
+cp -r skills/google-drive ~/.cursor/skills/google-drive
 
 # Make scripts executable
 chmod +x ~/.*/skills/google-*/scripts/*.sh
@@ -214,6 +250,7 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                     ┌──────▼──────┐
                     │  tasks.sh / │
                     │ calendar.sh │
+                    │  / drive.sh │
                     └──────┬──────┘
                            │
                 ┌──────────▼──────────┐
@@ -234,10 +271,10 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                 │  on work email      │
                 └──────────┬──────────┘
                            │
-              ┌────────────▼────────────┐
-              │ Google Tasks / Calendar │
-              │ API (Workspace)        │
-              └────────────────────────┘
+              ┌─────────────────▼──────────────────┐
+              │ Google Tasks / Calendar / Drive API │
+              │ (Workspace)                        │
+              └────────────────────────────────────┘
 ```
 
 **Sync cycle (every minute):**
@@ -252,16 +289,18 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
 - The Apps Script web app runs as your personal Gmail account
 - The spreadsheet is only shared between your two accounts
 - No data passes through third-party servers
-- **Never commit your configured ****`tasks.sh`**** or ****`calendar.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
+- **Never commit your configured ****`tasks.sh`****, ****`calendar.sh`****, or ****`drive.sh`**** with real credentials.** The repo templates use `__PLACEHOLDER__` values that are safe to commit.
 
 ## Troubleshooting
 
 | Issue | Solution |
 | --- | --- |
-| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
+| "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
 | Data not syncing | Run `setupTrigger()` again in the work account's Apps Script. Check Executions log for errors. |
 | "Task list not found" | Run `listTaskLists` first to get valid IDs. The skill uses spreadsheet UUIDs, not Google IDs. |
-| Stale data | The sync runs every minute. If you need immediate sync, use `calendar.sh syncNow`. |
+| Stale data | The sync runs every minute. If you need immediate sync, use `calendar.sh syncNow` or `drive.sh syncNow`. |
+| "UrlFetchApp.fetch" permission error | Re-authorize the WorkSync.gs script: run any function and grant the `script.external_request` permission when prompted. |
+| "File not found" in Drive | The file may not be tracked yet. Use `searchFiles` to discover and track it first. |
 | Apps Script quota errors | Free Gmail accounts have lower quotas. Consider using a Google Workspace account for the proxy too. |
 | Permission denied on `.sh` | Run `chmod +x` on the script files |
 | Agent doesn't see the skill | Verify the skill is in the correct directory for your agent (see Supported Agents table) |
@@ -287,14 +326,25 @@ google-workspace-proxy-skills/
     │   │   └── SyncMeta.csv
     │   └── references/
     │       └── api-actions.md          # Full API reference
-    └── google-calendar/
+    ├── google-calendar/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   │   ├── calendar.sh
+    │   │   ├── PersonalProxy.gs
+    │   │   ├── WorkSync.gs
+    │   │   ├── Calendars.csv
+    │   │   ├── Events.csv
+    │   │   ├── CommandQueue.csv
+    │   │   └── SyncMeta.csv
+    │   └── references/
+    │       └── api-actions.md
+    └── google-drive/
         ├── SKILL.md
         ├── scripts/
-        │   ├── calendar.sh
+        │   ├── drive.sh
         │   ├── PersonalProxy.gs
         │   ├── WorkSync.gs
-        │   ├── Calendars.csv
-        │   ├── Events.csv
+        │   ├── Files.csv
         │   ├── CommandQueue.csv
         │   └── SyncMeta.csv
         └── references/
@@ -312,7 +362,7 @@ Contributions are welcome! Here's how to get started:
 ```
 3. **Make your changes.** Key areas where help is appreciated:
   - Improving the sync engine reliability
-  - Adding support for more Google Workspace APIs (Gmail, Drive, etc.)
+  - Adding support for more Google Workspace APIs (Gmail, etc.)
   - Adding more AI agent targets to the installer
   - Better error handling and retry logic
   - Supporting other timezone defaults
@@ -334,7 +384,6 @@ Contributions are welcome! Here's how to get started:
 
 - **More agents** -- add support for Windsurf, Cline, Roo Code, aider, etc.
 - **Google Gmail skill** -- read/send emails through the same proxy pattern
-- **Google Drive skill** -- search and manage files
 - **Webhook support** -- push-based sync instead of polling every minute
 - **Multi-timezone** -- configurable timezone per user instead of hardcoded +07:00
 - **Batch operations** -- optimize multiple writes in a single API call
