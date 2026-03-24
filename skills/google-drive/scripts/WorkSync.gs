@@ -70,6 +70,43 @@ function removeTrigger() {
   Logger.log('All syncCycle triggers removed');
 }
 
+// ── On-Change Trigger (instant command processing) ────────────────────────────
+
+function setupOnChangeTrigger() {
+  var ss = SpreadsheetApp.openById(SYNC_CONFIG.SPREADSHEET_ID);
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'onSpreadsheetChange') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('onSpreadsheetChange')
+    .forSpreadsheet(ss)
+    .onChange()
+    .create();
+  Logger.log('onChange trigger set up for instant command processing');
+}
+
+function removeOnChangeTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'onSpreadsheetChange') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  Logger.log('onChange trigger removed');
+}
+
+function onSpreadsheetChange(e) {
+  if (e.changeType !== 'EDIT') return;
+  if (!acquireLock_()) return;
+  try {
+    processCommands_(Date.now());
+  } catch (err) {
+    Logger.log('onChange processCommands error: ' + err.message);
+  } finally {
+    releaseLock_();
+  }
+}
+
 // ── Main Sync Cycle ────────────────────────────────────────────────────────────
 
 function syncCycle() {

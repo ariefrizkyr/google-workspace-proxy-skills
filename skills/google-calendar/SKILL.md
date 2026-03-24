@@ -26,7 +26,7 @@ For full API actions reference, see `references/api-actions.md`.
 - Read operations return data from the spreadsheet (reflects last sync).
 - IDs are spreadsheet UUIDs, not Google Calendar event IDs.
 - Conflict resolution: last-write-wins. Claude's pending changes push before pulling from Google.
-- Async commands (findSlots, checkAvailability) are queued and processed by the next sync cycle. Use `getCommandResult` to poll for results.
+- Commands (findSlots, checkAvailability, updateSeries, deleteSeries) are processed server-side and return results directly (typically 5-15 seconds). If the response shows `status: "processing"`, poll with `getCommandResult` after 30 seconds (max 2 retries).
 
 ## Multi-calendar support
 
@@ -111,11 +111,10 @@ Convert relative dates/times to ISO 8601 format:
 When user wants to schedule with someone without specifying a time:
 
 1. Call `findSlots` with attendees, duration, and date range.
-2. Tell user: "Let me check availability. This takes about a minute..."
-3. Wait ~60 seconds, then call `getCommandResult` with the requestId.
-4. If status is still "processing", wait another 30 seconds and retry (max 3 attempts).
-5. Present the available slots with any warnings (holidays, etc.).
-6. Once user picks a slot, call `createEvent`.
+2. Tell user: "Let me check availability..."
+3. The result is returned directly (typically 5-15 seconds). If status is "processing", poll with `getCommandResult` after 30 seconds (max 2 retries).
+4. Present the available slots with any warnings (holidays, etc.).
+5. Once user picks a slot, call `createEvent`.
 
 ### 6. Present results
 
@@ -184,7 +183,7 @@ Events from calendars with type `holiday` are treated as **warnings**, not exclu
 
 **Scope mapping:**
 - **This instance only** → use `updateEvent` / `deleteEvent` with the instance's `eventId` (synchronous, same as non-recurring)
-- **All instances (entire series)** → use `updateSeries` / `deleteSeries` with any instance's `eventId` (async — poll with `getCommandResult`)
+- **All instances (entire series)** → use `updateSeries` / `deleteSeries` with any instance's `eventId` (result returned directly, typically 5-15 seconds)
 
 **"This and following instances"** is not supported. If the user wants this, suggest: delete the series, then create a new recurring event starting from the desired date.
 
@@ -193,11 +192,10 @@ Events from calendars with type `holiday` are treated as **warnings**, not exclu
 2. Confirm it's recurring: check for `recurringEventId` in the response
 3. Ask user: "Do you want to change just this occurrence, or all instances of the series?"
 4. If all instances: call `updateSeries '{"eventId": "<instance-uuid>", "startTime": "...", "endTime": "..."}'`
-5. Tell user: "Updating the series. This takes about a minute..."
-6. Poll with `getCommandResult` after ~60 seconds
+5. Result is returned directly (typically 5-15 seconds). If status is "processing", poll with `getCommandResult` after 30 seconds.
 
 **Workflow — delete a series:**
 1. Find the event and confirm it's recurring (same as above)
 2. Ask user: "Do you want to cancel just this occurrence, or the entire series?"
 3. If entire series: call `deleteSeries '{"eventId": "<instance-uuid>"}'`
-4. Poll with `getCommandResult` after ~60 seconds
+4. Result is returned directly (typically 5-15 seconds). If status is "processing", poll with `getCommandResult` after 30 seconds.

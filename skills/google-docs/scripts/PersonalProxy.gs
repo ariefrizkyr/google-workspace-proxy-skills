@@ -175,7 +175,18 @@ function enqueueCommand_(action, params) {
   cmdSheet.appendRow([
     id, action, JSON.stringify(params), 'pending', ts, '', ''
   ]);
-  return { requestId: id, status: 'queued', message: action + ' queued. Poll with getCommandResult in ~60 seconds.' };
+  return executeAsyncAndWait_(id);
+}
+
+function executeAsyncAndWait_(commandId) {
+  for (var i = 0; i < 20; i++) {
+    Utilities.sleep(3000);
+    var result = getCommandResult_({requestId: commandId});
+    if (result.status === 'completed' || result.status === 'failed') {
+      return result;
+    }
+  }
+  return { requestId: commandId, status: 'processing', message: 'Still processing. Poll with getCommandResult if needed.' };
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
