@@ -16,7 +16,7 @@ All actions are called via `tasks.sh <action> ['{"param": "value"}']`. Every req
 
 | Action | Params | Body fields |
 |--------|--------|-------------|
-| `listTasks` | `taskListId` | `showCompleted`, `showHidden` |
+| `listTasks` | `taskListId` | `showCompleted` (default: `false`), `showHidden` |
 | `getTask` | `taskId` | — |
 | `createTask` | `taskListId` | `title`, `notes`, `due`, `parent`, `position`, `links` |
 | `updateTask` | `taskId` | `title`, `notes`, `due`, `status`, `completed` |
@@ -32,8 +32,11 @@ All actions are called via `tasks.sh <action> ['{"param": "value"}']`. Every req
 # List all task lists
 tasks.sh listTaskLists
 
-# List tasks in a list
-tasks.sh listTasks '{"taskListId": "uuid-here"}'
+# List incomplete tasks in a list (default)
+tasks.sh listTasks '{"taskListId": "uuid-here", "showCompleted": false}'
+
+# List all tasks including completed
+tasks.sh listTasks '{"taskListId": "uuid-here", "showCompleted": true}'
 
 # Create a task
 tasks.sh createTask '{"taskListId": "uuid-here", "title": "Buy groceries", "due": "2026-03-01T00:00:00.000Z"}'

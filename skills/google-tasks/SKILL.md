@@ -40,8 +40,11 @@ Use these exact parameter names in JSON — do NOT abbreviate or rename them:
 # List all task lists
 tasks.sh listTaskLists
 
-# List tasks in a list
-tasks.sh listTasks '{"taskListId": "<list-uuid>"}'
+# List tasks in a list (incomplete only — default)
+tasks.sh listTasks '{"taskListId": "<list-uuid>", "showCompleted": false}'
+
+# List tasks including completed (only when user asks for done/finished tasks)
+tasks.sh listTasks '{"taskListId": "<list-uuid>", "showCompleted": true}'
 
 # Create a task (with optional notes and due date)
 tasks.sh createTask '{"taskListId": "<list-uuid>", "title": "Task title", "due": "2026-03-05T00:00:00.000Z"}'
@@ -67,7 +70,8 @@ tasks.sh clearCompleted '{"taskListId": "<list-uuid>"}'
 
 ### 1. Map intent to action
 
-- **View tasks**: "show my tasks", "what's due today", "my todos", "what's pending" → `listTasks`
+- **View tasks**: "show my tasks", "what's due today", "my todos", "what's pending" → `listTasks` with `showCompleted: false` (default)
+- **View completed tasks**: "what did I do today", "what have I completed", "show done tasks", "what did we finish" → `listTasks` with `showCompleted: true`
 - **View lists**: "show my lists", "what lists do I have" → `listTaskLists`
 - **Create**: "add task X", "remind me to X", "I need to X", "don't let me forget X" → `createTask`
 - **Complete**: "mark X as done", "I finished X", "done with X", "check off X" → `completeTask`
@@ -77,12 +81,14 @@ tasks.sh clearCompleted '{"taskListId": "<list-uuid>"}'
 - **Move**: "move X to list Y" → `moveTask`
 - **Housekeeping**: "clear completed", "clean up done tasks" → `clearCompleted`
 
+> **Default: hide completed tasks.** Always pass `"showCompleted": false` unless the user explicitly asks about completed/done/finished tasks. This reduces data and keeps responses focused on actionable items.
+
 ### 2. Resolve IDs
 
 Always resolve IDs before any operation — never guess.
 
 1. Call `listTaskLists` to get list IDs. Use the first/default list if user doesn't specify one.
-2. For task-specific operations, call `listTasks` with `{"taskListId": "<list-uuid>"}` and match user's description to a task title (case-insensitive, partial match OK).
+2. For task-specific operations, call `listTasks` with `{"taskListId": "<list-uuid>", "showCompleted": false}` and match user's description to a task title (case-insensitive, partial match OK). If the user is referencing a completed task (e.g., "uncomplete X", "reopen X"), use `"showCompleted": true` instead.
 3. If multiple matches, ask the user which one. If no match, say so.
 
 ### 3. Handle dates
