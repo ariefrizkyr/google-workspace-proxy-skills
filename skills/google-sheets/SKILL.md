@@ -24,11 +24,11 @@ For full API actions reference, see `references/api-actions.md`.
 
 ## Sync behavior
 
-- **All target spreadsheet operations are asynchronous** — both reads and writes are queued in CommandQueue and processed by WorkSync.gs (running on the work email) via Sheets API v4. This is because the personal email proxy may not have access to work email spreadsheets.
-- **Only proxy-spreadsheet reads are synchronous** — `listTrackedSpreadsheets` and `getCommandResult` read from the proxy spreadsheet directly.
+- **All target spreadsheet operations are processed server-side** — both reads and writes are queued in CommandQueue and processed by WorkSync.gs (running on the work email) via Sheets API v4. Results are returned directly in the same request (typically 5-15 seconds). This is because the personal email proxy may not have access to work email spreadsheets.
+- **Proxy-spreadsheet reads are instant** — `listTrackedSpreadsheets` and `getCommandResult` read from the proxy spreadsheet directly.
 - IDs are tracking UUIDs (from TrackedSpreadsheets), not Google spreadsheet IDs directly.
 - **Selective tracking**: Only spreadsheets resolved via `resolveSpreadsheet` are tracked. Not all user spreadsheets are synced.
-- All commands are queued and processed by the next sync cycle (~1 minute). Use `getCommandResult` to poll for results.
+- All commands are queued and results are returned directly (typically 5-15 seconds). If the response shows `status: "processing"`, poll with `getCommandResult` after 30 seconds (max 2 retries).
 - Cell limit: CommandQueue stores params as JSON in a cell (50,000 char limit). Split very large writes into multiple calls.
 - Read size: `getSheetData` defaults to 500 rows / 50 cols to prevent timeouts.
 
@@ -45,58 +45,23 @@ For full API actions reference, see `references/api-actions.md`.
 - "get spreadsheet details" → `getSpreadsheet`
 
 **Write data:**
-- "write values to A1:C3" → `writeRange` (async)
-- "write to multiple ranges" → `writeMultipleRanges` (async)
-- "append rows to the table" → `appendRows` (async)
-- "clear cells A1:C10" → `clearRange` (async)
-- "clear multiple ranges" → `clearMultipleRanges` (async)
-
+- "write values to A1:C3" → `writeRange`- "write to multiple ranges" → `writeMultipleRanges`- "append rows to the table" → `appendRows`- "clear cells A1:C10" → `clearRange`- "clear multiple ranges" → `clearMultipleRanges`
 **Sheet/tab management:**
-- "add a new sheet called Summary" → `addSheet` (async)
-- "delete that sheet" → `deleteSheet` (async)
-- "duplicate the sheet" → `duplicateSheet` (async)
-- "rename sheet to Overview" → `renameSheet` (async)
-- "freeze the top row" → `updateSheetProperties` (async)
-
+- "add a new sheet called Summary" → `addSheet`- "delete that sheet" → `deleteSheet`- "duplicate the sheet" → `duplicateSheet`- "rename sheet to Overview" → `renameSheet`- "freeze the top row" → `updateSheetProperties`
 **Row/column operations:**
-- "insert 3 rows at row 5" → `insertRows` (async)
-- "insert columns B through D" → `insertColumns` (async)
-- "delete rows 10 to 15" → `deleteRows` (async)
-- "delete columns F through H" → `deleteColumns` (async)
-- "move rows 5-7 to row 20" → `moveRows` (async)
-- "resize column A to 200px" → `resizeColumns` (async)
-- "auto-resize columns A through E" → `autoResizeColumns` (async)
-
+- "insert 3 rows at row 5" → `insertRows`- "insert columns B through D" → `insertColumns`- "delete rows 10 to 15" → `deleteRows`- "delete columns F through H" → `deleteColumns`- "move rows 5-7 to row 20" → `moveRows`- "resize column A to 200px" → `resizeColumns`- "auto-resize columns A through E" → `autoResizeColumns`
 **Formatting:**
-- "make the header row bold" → `formatCells` (async)
-- "set borders on the table" → `setBorders` (async)
-- "merge cells A1:C1" → `mergeCells` (async)
-- "unmerge cells" → `unmergeCells` (async)
-
+- "make the header row bold" → `formatCells`- "set borders on the table" → `setBorders`- "merge cells A1:C1" → `mergeCells`- "unmerge cells" → `unmergeCells`
 **Data operations:**
-- "sort by column B descending" → `sortRange` (async)
-- "find all instances of 'foo' and replace with 'bar'" → `findReplace` (async)
-- "highlight cells above 100 in green" → `addConditionalFormat` (async)
-- "add dropdown validation for column D" → `setDataValidation` (async)
-- "name this range 'Revenue'" → `addNamedRange` (async)
-
+- "sort by column B descending" → `sortRange`- "find all instances of 'foo' and replace with 'bar'" → `findReplace`- "highlight cells above 100 in green" → `addConditionalFormat`- "add dropdown validation for column D" → `setDataValidation`- "name this range 'Revenue'" → `addNamedRange`
 **Protection:**
-- "protect cells A1:B10" → `protectRange` (async)
-- "remove protection" → `unprotectRange` (async)
-
+- "protect cells A1:B10" → `protectRange`- "remove protection" → `unprotectRange`
 **Charts:**
-- "create a bar chart from A1:C10" → `addChart` (async)
-- "update the chart title" → `updateChart` (async)
-- "delete the chart" → `deleteChart` (async)
-
+- "create a bar chart from A1:C10" → `addChart`- "update the chart title" → `updateChart`- "delete the chart" → `deleteChart`
 **Filters:**
-- "add a filter to the data" → `setBasicFilter` (async)
-- "clear the filter" → `clearBasicFilter` (async)
-- "create a filter view" → `addFilterView` (async)
-
+- "add a filter to the data" → `setBasicFilter`- "clear the filter" → `clearBasicFilter`- "create a filter view" → `addFilterView`
 **Pivot tables:**
-- "create a pivot table" → `addPivotTable` (async)
-
+- "create a pivot table" → `addPivotTable`
 ### 2. Use exact API parameter names
 
 Always use the exact parameter names from `references/api-actions.md`. Common mistakes to avoid:
@@ -127,15 +92,13 @@ Ranges use A1 notation with optional sheet name prefix:
 - `Sheet1!A1:C10` — range on specific sheet
 - `'My Sheet'!A1:C10` — sheet names with spaces need single quotes
 
-### 5. Handle async operations
+### 5. Handle command responses
 
-Write operations and structural changes are async:
+All operations return results directly (typically 5-15 seconds):
 
-1. Call the action — returns `{ requestId, status: "queued" }`.
-2. Tell user: "Done! The changes will apply within a minute..."
-3. If confirmation needed, wait ~60 seconds, then call `getCommandResult` with the requestId.
-4. If status is still "processing", wait another 30 seconds and retry (max 3 attempts).
-5. Present the results.
+1. Call the action — result is returned in the same response.
+2. If the response shows `status: "processing"` (rare), poll with `getCommandResult` after 30 seconds (max 2 retries).
+3. Present the results.
 
 ### 6. Present results
 

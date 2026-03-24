@@ -193,7 +193,7 @@ else
 fi
 
 # Make the HTTP request
-RESPONSE=$(curl -sL \
+RESPONSE=$(curl -sL --max-time 120 \
   -H "Content-Type: application/json" \
   -d "$BODY" \
   "$GOOGLE_CALENDAR_URL")

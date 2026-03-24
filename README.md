@@ -18,7 +18,7 @@ AI Agent  ->  Shell Script  ->  Apps Script (Personal Gmail)  ->  Google Spreads
                                                           Apps Script (Work Email)  ->  Google Tasks / Calendar / Drive / Sheets / Docs API
 ```
 
-**Why not call the API directly?** Google Workspace APIs require OAuth with browser-based consent flows. This proxy approach uses Apps Script (which has built-in auth) and a shared spreadsheet as the communication layer. Your agent just makes HTTP calls to your personal Apps Script web app. A sync engine on your work account syncs the spreadsheet with the actual APIs every minute.
+**Why not call the API directly?** Google Workspace APIs require OAuth with browser-based consent flows. This proxy approach uses Apps Script (which has built-in auth) and a shared spreadsheet as the communication layer. Your agent just makes HTTP calls to your personal Apps Script web app. A sync engine on your work account processes commands instantly via an onChange trigger and syncs the spreadsheet with the actual APIs every minute as a safety net.
 
 ## Supported Agents
 
@@ -220,8 +220,9 @@ This runs on your **work email** account.
   - For Sheets: Click **Services** (+) > add **Sheets API** (Advanced Service)
   - For Docs: Click **Services** (+) > add **Docs API** (Advanced Service)
 6. Run `initialImport()` once to seed the spreadsheet with your existing data
-7. Run `setupTrigger()` to start the 1-minute sync cycle
-8. Grant all permission prompts
+7. Run `setupTrigger()` to start the 1-minute sync cycle (background sync for push/pull)
+8. Run `setupOnChangeTrigger()` to enable instant command processing (results return in 5-15 seconds instead of ~60 seconds)
+9. Grant all permission prompts
 
 ### Step 4: Configure Credentials
 
@@ -336,7 +337,7 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
                 │  (shared between    │
                 │   both accounts)    │
                 └──────────┬──────────┘
-                           │ Sync every 1 min
+                           │ onChange (instant) + sync every 1 min
                 ┌──────────▼──────────┐
                 │  Sync Engine        │
                 │  (Apps Script)      │
@@ -349,10 +350,13 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
               └────────────────────────────────────┘
 ```
 
-**Sync cycle (every minute):**
+**Instant command processing (onChange trigger):**
+When your agent writes a command to the spreadsheet, an onChange trigger on the work account's Apps Script fires immediately and processes the command. The PersonalProxy waits server-side and returns the result directly — typically in 5-15 seconds. No polling needed.
+
+**Background sync cycle (every minute, safety net):**
 1. **Push** -- pending local changes (from your agent) are pushed to Google APIs
 2. **Pull** -- new/updated items from Google are pulled into the spreadsheet
-3. **Commands** -- async operations (findSlots, checkAvailability) are processed
+3. **Commands** -- any unprocessed commands are picked up (fallback if onChange was delayed)
 4. **Cleanup** -- deleted rows older than 7 days are removed
 
 ## Security
@@ -368,9 +372,10 @@ Then update `__SKILL_DIR__` in each `SKILL.md` to the absolute path where the sk
 | Issue | Solution |
 | --- | --- |
 | "Unauthorized" error | Check that the API key in `tasks.sh`/`calendar.sh`/`drive.sh`/`sheets.sh`/`docs.sh` matches `CONFIG.API_KEY` in PersonalProxy.gs |
-| Data not syncing | Run `setupTrigger()` again in the work account's Apps Script. Check Executions log for errors. |
+| Data not syncing | Run `setupTrigger()` and `setupOnChangeTrigger()` again in the work account's Apps Script. Check Executions log for errors. |
 | "Task list not found" | Run `listTaskLists` first to get valid IDs. The skill uses spreadsheet UUIDs, not Google IDs. |
-| Stale data | The sync runs every minute. If you need immediate sync, use `calendar.sh syncNow` or `drive.sh syncNow`. |
+| Stale data | Commands are processed instantly via onChange trigger. If data seems stale, check that `setupOnChangeTrigger()` was run. For manual sync, use `calendar.sh syncNow` or `drive.sh syncNow`. |
+| Commands taking ~60s | The onChange trigger may not be set up. Run `setupOnChangeTrigger()` in each WorkSync.gs on the work account's Apps Script editor. |
 | "UrlFetchApp.fetch" permission error | Re-authorize the WorkSync.gs script: run any function and grant the `script.external_request` permission when prompted. |
 | "File not found" in Drive | The file may not be tracked yet. Use `searchFiles` to discover and track it first. |
 | Apps Script quota errors | Free Gmail accounts have lower quotas. Consider using a Google Workspace account for the proxy too. |

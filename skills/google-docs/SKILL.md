@@ -24,11 +24,11 @@ For full API actions reference, see `references/api-actions.md`.
 
 ## Sync behavior
 
-- **All target document operations are asynchronous** — both reads and writes are queued in CommandQueue and processed by WorkSync.gs (running on the work email) via Docs API v1. This is because the personal email proxy may not have access to work email documents.
-- **Only proxy-spreadsheet reads are synchronous** — `listTrackedDocuments` and `getCommandResult` read from the proxy spreadsheet directly.
+- **All target document operations are processed server-side** — both reads and writes are queued in CommandQueue and processed by WorkSync.gs (running on the work email) via Docs API v1. Results are returned directly in the same request (typically 5-15 seconds). This is because the personal email proxy may not have access to work email documents.
+- **Proxy-spreadsheet reads are instant** — `listTrackedDocuments` and `getCommandResult` read from the proxy spreadsheet directly.
 - IDs are tracking UUIDs (from TrackedDocuments), not Google document IDs directly.
 - **Selective tracking**: Only documents resolved via `resolveDocument` are tracked. Not all user documents are synced.
-- All commands are queued and processed by the next sync cycle (~1 minute). Use `getCommandResult` to poll for results.
+- All commands are queued and results are returned directly (typically 5-15 seconds). If the response shows `status: "processing"`, poll with `getCommandResult` after 30 seconds (max 2 retries).
 - Cell limit: CommandQueue stores params as JSON in a cell (50,000 char limit). Split very large text insertions into multiple calls.
 - Content limit: `getDocumentContent` truncates at ~50K chars of JSON output.
 
@@ -130,15 +130,13 @@ This returns elements with `startIndex` and `endIndex`. Use these to target edit
 
 Each edit returns a `requestId`. If you need updated indices after an edit, call `getDocumentContent` again after the command completes.
 
-### 5. Handle async operations
+### 5. Handle command responses
 
-All operations are async (except `listTrackedDocuments` and `getCommandResult`):
+All operations return results directly (typically 5-15 seconds, except `listTrackedDocuments` and `getCommandResult` which are instant):
 
-1. Call the action — returns `{ requestId, status: "queued" }`.
-2. Tell user: "Done! The changes will apply within a minute..."
-3. If confirmation needed, wait ~60 seconds, then call `getCommandResult` with the requestId.
-4. If status is still "processing", wait another 30 seconds and retry (max 3 attempts).
-5. Present the results.
+1. Call the action — result is returned in the same response.
+2. If the response shows `status: "processing"` (rare), poll with `getCommandResult` after 30 seconds (max 2 retries).
+3. Present the results.
 
 ### 6. Present results
 

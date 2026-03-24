@@ -794,7 +794,7 @@ function updateSeries_(params) {
     id, 'updateSeries', JSON.stringify(cmdParams), 'pending', ts, '', ''
   ]);
 
-  return { requestId: id, status: 'queued', message: 'Series update queued. Poll with getCommandResult in ~60 seconds.' };
+  return executeAsyncAndWait_(id);
 }
 
 function deleteSeries_(params) {
@@ -827,7 +827,7 @@ function deleteSeries_(params) {
     'pending', ts, '', ''
   ]);
 
-  return { requestId: id, status: 'queued', message: 'Series deletion queued. Poll with getCommandResult in ~60 seconds.' };
+  return executeAsyncAndWait_(id);
 }
 
 // ── Smart Scheduling Actions (Async) ───────────────────────────────────────────
@@ -849,7 +849,7 @@ function checkAvailability_(params) {
     '',                                       // processedAt
     ''                                        // result
   ]);
-  return { requestId: id, status: 'queued', message: 'Availability check queued. Poll with getCommandResult in ~60 seconds.' };
+  return executeAsyncAndWait_(id);
 }
 
 function findSlots_(params) {
@@ -873,7 +873,7 @@ function findSlots_(params) {
     '',                                       // processedAt
     ''                                        // result
   ]);
-  return { requestId: id, status: 'queued', message: 'Slot search queued. Poll with getCommandResult in ~60 seconds.' };
+  return executeAsyncAndWait_(id);
 }
 
 function getCommandResult_(params) {
@@ -896,6 +896,19 @@ function getCommandResult_(params) {
   }
 
   return result;
+}
+
+// ── Async Wait (server-side polling for onChange-triggered processing) ─────────
+
+function executeAsyncAndWait_(commandId) {
+  for (var i = 0; i < 20; i++) {
+    Utilities.sleep(3000);
+    var result = getCommandResult_({requestId: commandId});
+    if (result.status === 'completed' || result.status === 'failed') {
+      return result;
+    }
+  }
+  return { requestId: commandId, status: 'processing', message: 'Still processing. Poll with getCommandResult if needed.' };
 }
 
 // ── Utility Actions ────────────────────────────────────────────────────────────
