@@ -27,8 +27,8 @@ For full API actions reference, see `references/api-actions.md`.
 - IDs are spreadsheet UUIDs, not Google Drive file IDs.
 - **Selective sync**: Only files created by Claude or discovered via `searchFiles`/`listFolderContents` are tracked. Drive has potentially millions of files — we don't sync everything.
 - Conflict resolution: last-write-wins. Claude's pending changes push before pulling from Google.
-- Async commands (search, sharing, export, revisions, comments, etc.) are queued and processed by the next sync cycle. Use `getCommandResult` to poll for results.
-- Most advanced Drive features (export, revisions, comments, permissions, shared drives, storage) are async via CommandQueue.
+- Commands (search, sharing, export, revisions, comments, etc.) are processed server-side and return results directly (typically 5-15 seconds). If the response shows `status: "processing"`, poll with `getCommandResult` after 30 seconds (max 2 retries).
+- Most advanced Drive features (export, revisions, comments, permissions, shared drives, storage) go through the CommandQueue but results are returned in the same request.
 
 ## Workflow
 
@@ -38,9 +38,7 @@ For full API actions reference, see `references/api-actions.md`.
 - "show my files", "what's in my Drive" → `listFiles`
 - "recent files", "recently modified" → `listRecentFiles`
 - "show my folders" → `listFolders`
-- "find [filename]", "search for [query]" → `searchFiles` (async)
-- "what's in the [folder name] folder" → `listFolderContents` (async)
-- "show file details" → `getFile`
+- "find [filename]", "search for [query]" → `searchFiles`- "what's in the [folder name] folder" → `listFolderContents`- "show file details" → `getFile`
 
 **Create files:**
 - "create a folder called X" → `createFolder`
@@ -56,36 +54,17 @@ For full API actions reference, see `references/api-actions.md`.
 - "unstar [file]" → `unstarFile`
 - "delete [file]", "trash [file]" → `trashFile`
 - "restore [file] from trash" → `restoreFile`
-- "move [file] to [folder]" → `moveFile` (async)
-- "copy [file]" → `copyFile` (async)
-
+- "move [file] to [folder]" → `moveFile`- "copy [file]" → `copyFile`
 **Sharing & permissions:**
-- "share [file] with [email]" → `shareFile` (async)
-- "remove [email]'s access to [file]" → `unshareFile` (async)
-- "who has access to [file]" → `getPermissions` (async)
-- "make [file] public" → `setPublicAccess` (async)
-- "remove public access from [file]" → `removePublicAccess` (async)
-
+- "share [file] with [email]" → `shareFile`- "remove [email]'s access to [file]" → `unshareFile`- "who has access to [file]" → `getPermissions`- "make [file] public" → `setPublicAccess`- "remove public access from [file]" → `removePublicAccess`
 **Export & content:**
-- "export [doc] as PDF" → `exportFile` (async)
-- "download [file]", "get the content of [file]" → `getFileContent` (async)
-
+- "export [doc] as PDF" → `exportFile`- "download [file]", "get the content of [file]" → `getFileContent`
 **Revisions:**
-- "show revision history of [file]" → `listRevisions` (async)
-- "get revision [id] of [file]" → `getRevision` (async)
-
+- "show revision history of [file]" → `listRevisions`- "get revision [id] of [file]" → `getRevision`
 **Comments:**
-- "show comments on [file]" → `listComments` (async)
-- "add a comment to [file]" → `addComment` (async)
-- "delete comment [id]" → `deleteComment` (async)
-- "show replies to comment [id]" → `listReplies` (async)
-- "reply to comment [id]" → `addReply` (async)
-
+- "show comments on [file]" → `listComments`- "add a comment to [file]" → `addComment`- "delete comment [id]" → `deleteComment`- "show replies to comment [id]" → `listReplies`- "reply to comment [id]" → `addReply`
 **Storage & maintenance:**
-- "how much storage am I using" → `getStorageInfo` (async)
-- "show my shared drives" → `listSharedDrives` (async)
-- "empty my trash" → `emptyTrash` (async)
-
+- "how much storage am I using" → `getStorageInfo`- "show my shared drives" → `listSharedDrives`- "empty my trash" → `emptyTrash`
 ### 2. Use exact API parameter names
 
 Always use the exact parameter names from `references/api-actions.md`. Common mistakes to avoid:
@@ -104,15 +83,13 @@ Always resolve IDs before any operation — never guess.
 3. For folder operations, call `listFolders` to find folder IDs.
 4. For operations on files not yet tracked, use `searchFiles` first to discover and track them.
 
-### 4. Handle async operations
+### 4. Handle command responses
 
-Most advanced features are async (search, sharing, export, revisions, comments, shared drives, storage):
+Most advanced features (search, sharing, export, revisions, comments, shared drives, storage) are processed server-side and return results directly (typically 5-15 seconds):
 
-1. Call the action — returns `{ requestId, status: "queued" }`.
-2. Tell user: "Let me look that up. This takes about a minute..."
-3. Wait ~60 seconds, then call `getCommandResult` with the requestId.
-4. If status is still "processing", wait another 30 seconds and retry (max 3 attempts).
-5. Present the results.
+1. Call the action — result is returned in the same response.
+2. If the response shows `status: "processing"` (rare), poll with `getCommandResult` after 30 seconds (max 2 retries).
+3. Present the results.
 
 ### 5. Present results
 

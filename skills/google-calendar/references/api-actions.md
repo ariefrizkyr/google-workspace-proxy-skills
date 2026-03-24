@@ -112,13 +112,12 @@ All IDs returned are spreadsheet UUIDs, not Google Calendar event IDs. Use these
 `checkAvailability`, `findSlots`, and `syncNow` are processed asynchronously by the sync engine. The response includes a `requestId`. Use `getCommandResult` to poll:
 
 ```bash
-# Submit scheduling request
+# Submit scheduling request (result returned directly, typically 5-15 seconds)
 calendar.sh findSlots '{"attendees": ["ardian@company.com"], "duration": 30, "startDate": "2026-02-26", "endDate": "2026-02-28"}'
-# Returns: {"requestId": "uuid", "status": "queued"}
-
-# Poll for result (after ~60 seconds)
-calendar.sh getCommandResult '{"requestId": "uuid"}'
 # Returns: {"status": "completed", "result": {"slots": [...]}}
+
+# If status is "processing" (rare), poll with getCommandResult after 30 seconds:
+calendar.sh getCommandResult '{"requestId": "uuid"}'
 ```
 
 ## Recurring event operations

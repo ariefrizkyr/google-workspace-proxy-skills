@@ -195,13 +195,12 @@ The system uses **selective tracking** for spreadsheets:
 Write operations, formatting, structural changes, charts, filters, and pivot tables are processed asynchronously. The response includes a `requestId`. Use `getCommandResult` to poll:
 
 ```bash
-# Write values
+# Write values (result returned directly, typically 5-15 seconds)
 sheets.sh writeRange '{"spreadsheetId": "uuid", "range": "Sheet1!A1:C3", "values": [["a","b","c"],["d","e","f"],["g","h","i"]]}'
-# Returns: {"requestId": "uuid", "status": "queued"}
-
-# Poll for result (after ~60 seconds)
-sheets.sh getCommandResult '{"requestId": "uuid"}'
 # Returns: {"status": "completed", "result": {...}}
+
+# If status is "processing" (rare), poll with getCommandResult after 30 seconds:
+sheets.sh getCommandResult '{"requestId": "uuid"}'
 ```
 
 ## Limitations

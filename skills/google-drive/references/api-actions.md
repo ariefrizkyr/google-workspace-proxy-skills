@@ -149,13 +149,12 @@ All IDs returned are spreadsheet UUIDs, not Google Drive file IDs. Use these UUI
 Most advanced features (search, sharing, export, revisions, comments, shared drives, storage) are processed asynchronously by the sync engine. The response includes a `requestId`. Use `getCommandResult` to poll:
 
 ```bash
-# Search for files
+# Search for files (result returned directly, typically 5-15 seconds)
 drive.sh searchFiles '{"query": "Q1 Report"}'
-# Returns: {"requestId": "uuid", "status": "queued"}
-
-# Poll for result (after ~60 seconds)
-drive.sh getCommandResult '{"requestId": "uuid"}'
 # Returns: {"status": "completed", "result": {"items": [...]}}
+
+# If status is "processing" (rare), poll with getCommandResult after 30 seconds:
+drive.sh getCommandResult '{"requestId": "uuid"}'
 ```
 
 ## Examples

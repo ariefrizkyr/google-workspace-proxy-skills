@@ -179,13 +179,12 @@ The system uses **selective tracking** for documents:
 All operations except `listTrackedDocuments` and `getCommandResult` are processed asynchronously. The response includes a `requestId`. Use `getCommandResult` to poll:
 
 ```bash
-# Insert text
+# Insert text (result returned directly, typically 5-15 seconds)
 docs.sh insertText '{"documentId": "uuid", "text": "Hello World\n", "index": 1}'
-# Returns: {"requestId": "uuid", "status": "queued"}
-
-# Poll for result (after ~60 seconds)
-docs.sh getCommandResult '{"requestId": "uuid"}'
 # Returns: {"status": "completed", "result": {...}}
+
+# If status is "processing" (rare), poll with getCommandResult after 30 seconds:
+docs.sh getCommandResult '{"requestId": "uuid"}'
 ```
 
 ## Edit-backwards pattern
