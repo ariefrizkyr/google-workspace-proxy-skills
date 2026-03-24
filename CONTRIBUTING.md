@@ -1,35 +1,34 @@
 # Contributing
 
-Contributions are welcome! This project uses a **branch-based workflow** with protected branches.
+Contributions are welcome! This project uses a **branch-based workflow** with a protected `main` branch.
 
 ## Branch Strategy
 
 ```
-contributor → feat/xxx or fix/yyy → PR to dev → review & merge → PR from dev to main
+contributor → feat/xxx or fix/yyy → PR to main → review & merge
 ```
 
-- **`main`** -- production branch. Protected. Only the maintainer can merge PRs into `main`.
-- **`dev`** -- integration/testing branch. Protected. Contributors open PRs to `dev`.
-- **Feature/fix branches** -- created by contributors from `dev`.
+- **`main`** -- production branch. Protected. All PRs target `main` directly.
+- **Feature/fix branches** -- created by contributors from `main`.
 
 ## How to Contribute
 
 1. **Fork** the repository and clone it locally
-2. **Create a branch** from `dev` for your feature or fix:
+2. **Create a branch** from `main` for your feature or fix:
    ```bash
-   git checkout dev
-   git pull origin dev
+   git checkout main
+   git pull origin main
    git checkout -b feat/my-feature
    ```
 3. **Make your changes** following the guidelines below
 4. **Test your changes** by deploying the Apps Scripts and verifying the skill works end-to-end
-5. **Push** your branch and open a **Pull Request to `dev`** (not `main`):
+5. **Push** your branch and open a **Pull Request to `main`**:
    ```bash
    git push origin feat/my-feature
    ```
-   Then create a PR targeting the `dev` branch on GitHub.
-6. **Address review feedback** -- the maintainer will review your PR on the `dev` branch
-7. Once approved and merged to `dev`, the maintainer will promote changes from `dev` to `main`
+   Then create a PR targeting the `main` branch on GitHub.
+6. **Address review feedback** -- the maintainer will review your PR
+7. Once approved, the PR will be merged into `main`
 
 ## Branch Naming Conventions
 
