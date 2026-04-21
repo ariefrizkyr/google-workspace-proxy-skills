@@ -354,13 +354,28 @@ function pushCreate_(sheet, row, rowNum, googleCalId, extraProps) {
 
   var created = Calendar.Events.insert(eventBody, googleCalId, queryParams);
 
-  // Update sheet with Google data
+  // For recurring events, this row is only a placeholder used to push the
+  // recurrence rule to Google. The pull (Phase 2 of this same syncCycle)
+  // populates concrete instance rows with their own googleEventIds, each
+  // storing this master's id in extraProps.recurringEventId. Leaving the
+  // master row "active" would double up the first occurrence in reads
+  // (same start time as the first instance row). Tombstone it so reads
+  // exclude it via isActiveEvent_; cleanupDeletedRows_ reclaims it later.
+  // The googleEventId stays bound so updateSeries/deleteSeries can still
+  // resolve the master.
+  var isRecurring = extraProps.recurrenceRule && extraProps.recurrenceRule.length > 0;
   var ts = new Date().toISOString();
+
   sheet.getRange(rowNum, EVT.GOOGLE_EVENT_ID + 1).setValue(created.id);
   sheet.getRange(rowNum, EVT.MEET_LINK + 1).setValue(created.hangoutLink || '');
-  sheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue('synced');
+  sheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue(isRecurring ? 'deleted' : 'synced');
   sheet.getRange(rowNum, EVT.SYNCED_AT + 1).setValue(ts);
   sheet.getRange(rowNum, EVT.GOOGLE_UPDATED + 1).setValue(created.updated || '');
+
+  if (isRecurring) {
+    sheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
+    sheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('google');
+  }
 }
 
 function pushUpdate_(sheet, row, rowNum, googleCalId, extraProps) {
@@ -513,9 +528,13 @@ function pullCalendarEvents_(eventSheet, eventData, eventMap, googleCalId, sheet
   if (syncToken) {
     options.syncToken = syncToken;
   } else {
+    // showDeleted is required on full-window queries so cancelled instances
+    // (e.g. orphaned IDs after a recurring series is rescheduled) are returned
+    // and can be tombstoned. syncToken queries already include deletions.
     options.timeMin = windowStart.toISOString();
     options.timeMax = windowEnd.toISOString();
     options.orderBy = 'startTime';
+    options.showDeleted = true;
   }
 
   var pageToken = null;
@@ -536,7 +555,8 @@ function pullCalendarEvents_(eventSheet, eventData, eventMap, googleCalId, sheet
           maxResults: 250,
           timeMin: windowStart.toISOString(),
           timeMax: windowEnd.toISOString(),
-          orderBy: 'startTime'
+          orderBy: 'startTime',
+          showDeleted: true
         };
         response = Calendar.Events.list(googleCalId, options);
       } else {
@@ -1000,7 +1020,56 @@ function processUpdateSeries_(params) {
 
   Calendar.Events.patch(patchBody, googleCalId, recurringEventId);
 
-  // Invalidate sync token to force re-pull of updated instances
+  // Tombstone existing rows ONLY when DTSTART changes. Google encodes the
+  // original start time into each instance's id (`{masterId}_{YYYYMMDDT...Z}`),
+  // so a reschedule cancels the old ids and mints new ones on the new DTSTART
+  // — old rows would linger as ghosts on their original dates unless we
+  // tombstone and let the pull recreate them.
+  //
+  // Metadata-only patches (title / description / location / color / endTime)
+  // preserve instance ids. Tombstoning those rows would strand them: the pull
+  // returns the same ids and `processGoogleEvent_` skips non-synced rows, so
+  // they'd stay tombstoned until cleanup reclaimed them 7 days later. For
+  // metadata-only patches we rely on the normal pull path to update rows
+  // in place via the bumped `ge.updated` timestamp.
+  if (params.startTime !== undefined) {
+    var eventSheet = getSheet_(SYNC_CONFIG.SHEET_NAMES.EVENTS);
+    var eventData = eventSheet.getDataRange().getValues();
+    var ts = new Date().toISOString();
+
+    for (var i = 1; i < eventData.length; i++) {
+      if (eventData[i][EVT.GOOGLE_CAL_ID] !== googleCalId) continue;
+      // Skip any non-synced row — tombstoning a `pending_*` row would silently
+      // discard an in-flight local edit. Push will reconcile it on its next run.
+      if (eventData[i][EVT.SYNC_STATUS] !== 'synced') continue;
+
+      // Match both the master row (googleEventId === recurringEventId, carries
+      // extraProps.recurrenceRule only) and instance rows (extraProps.recurringEventId
+      // === recurringEventId). The master is never returned by singleEvents pulls,
+      // so if we skip it here it becomes a permanent ghost.
+      var isMaster = eventData[i][EVT.GOOGLE_EVENT_ID] === recurringEventId;
+      var isInstance = false;
+      var extraJson = eventData[i][EVT.EXTRA_PROPS_JSON];
+      if (extraJson) {
+        try {
+          var extra = JSON.parse(extraJson);
+          isInstance = extra.recurringEventId === recurringEventId;
+        } catch(e) {}
+      }
+
+      if (isMaster || isInstance) {
+        var rowNum = i + 1;
+        eventSheet.getRange(rowNum, EVT.STATUS + 1).setValue('cancelled');
+        eventSheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue('deleted');
+        eventSheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
+        eventSheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('google');
+      }
+    }
+  }
+
+  // Invalidate sync token so the next pull returns updated instances via a
+  // full-window query (belt-and-suspenders: valid tokens would return them too,
+  // but an expired/missing token would otherwise miss the update).
   var syncTokenKey = 'syncToken_' + googleCalId;
   setMeta_(syncTokenKey, '');
 
@@ -1014,27 +1083,40 @@ function processDeleteSeries_(params) {
     return { error: 'googleCalId and recurringEventId are required' };
   }
 
-  Calendar.Events.remove(googleCalId, recurringEventId, { sendUpdates: 'all' });
+  try {
+    Calendar.Events.remove(googleCalId, recurringEventId, { sendUpdates: 'all' });
+  } catch(e) { /* may already be deleted — proceed to tombstone local rows */ }
 
-  // Mark all matching instance rows in Events sheet as deleted
+  // Mark all matching rows in Events sheet as deleted — both the master row
+  // (googleEventId === recurringEventId) and instance rows
+  // (extra.recurringEventId === recurringEventId). The master is never
+  // returned by singleEvents pulls, so omitting it strands a ghost row at
+  // the first-occurrence date.
   var eventSheet = getSheet_(SYNC_CONFIG.SHEET_NAMES.EVENTS);
   var eventData = eventSheet.getDataRange().getValues();
   var ts = new Date().toISOString();
 
   for (var i = 1; i < eventData.length; i++) {
     if (eventData[i][EVT.GOOGLE_CAL_ID] !== googleCalId) continue;
+    if (eventData[i][EVT.SYNC_STATUS] === 'deleted') continue;
+
+    var isMaster = eventData[i][EVT.GOOGLE_EVENT_ID] === recurringEventId;
+    var isInstance = false;
     var extraJson = eventData[i][EVT.EXTRA_PROPS_JSON];
-    if (!extraJson) continue;
-    try {
-      var extra = JSON.parse(extraJson);
-      if (extra.recurringEventId === recurringEventId) {
-        var rowNum = i + 1;
-        eventSheet.getRange(rowNum, EVT.STATUS + 1).setValue('cancelled');
-        eventSheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue('deleted');
-        eventSheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
-        eventSheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('google');
-      }
-    } catch(e) {}
+    if (extraJson) {
+      try {
+        var extra = JSON.parse(extraJson);
+        isInstance = extra.recurringEventId === recurringEventId;
+      } catch(e) {}
+    }
+
+    if (isMaster || isInstance) {
+      var rowNum = i + 1;
+      eventSheet.getRange(rowNum, EVT.STATUS + 1).setValue('cancelled');
+      eventSheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue('deleted');
+      eventSheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
+      eventSheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('google');
+    }
   }
 
   // Invalidate sync token to force re-pull
@@ -1121,7 +1203,8 @@ function importCalendarEvents_(eventSheet, googleCalId, sheetCalId) {
       orderBy: 'startTime',
       timeMin: windowStart.toISOString(),
       timeMax: windowEnd.toISOString(),
-      maxResults: 250
+      maxResults: 250,
+      showDeleted: true
     };
     if (pageToken) options.pageToken = pageToken;
 
@@ -1211,6 +1294,60 @@ function importCalendarEvents_(eventSheet, googleCalId, sheetCalId) {
   } while (pageToken);
 
   Logger.log('Imported ' + count + ' events from ' + googleCalId);
+}
+
+// ── One-Shot Migration: Orphaned Recurring Masters ─────────────────────────────
+
+// Run ONCE from the Apps Script editor's function dropdown after upgrading to
+// the pushCreate_ tombstone fix. Prior to that fix, every recurring event
+// created via createRecurringEvent left behind a "master" row alongside its
+// instance rows, duplicating the first-occurrence time in reads. This function
+// scans the Events sheet for those stranded masters and tombstones them so
+// reads exclude them and cleanupDeletedRows_ reclaims them after 7 days.
+//
+// Identity criteria for a stranded master row:
+//   - syncStatus === 'synced' (already pushed, not queued or already deleted)
+//   - googleEventId is set (the master ID in Google)
+//   - extraProps.recurrenceRule is a non-empty array (marks it as a master)
+//   - extraProps.recurringEventId is NOT set (instances carry that, masters don't)
+//
+// Safe to run multiple times — already-tombstoned rows are skipped.
+function cleanupOrphanedMasterRows() {
+  var sheet = getSheet_(SYNC_CONFIG.SHEET_NAMES.EVENTS);
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) {
+    Logger.log('No events to scan.');
+    return;
+  }
+
+  var ts = new Date().toISOString();
+  var tombstoned = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][EVT.SYNC_STATUS] !== 'synced') continue;
+    if (!data[i][EVT.GOOGLE_EVENT_ID]) continue;
+    var extraJson = data[i][EVT.EXTRA_PROPS_JSON];
+    if (!extraJson) continue;
+
+    try {
+      var extra = JSON.parse(extraJson);
+      if (!extra.recurrenceRule) continue;
+      if (!extra.recurrenceRule.length) continue;
+      if (extra.recurringEventId) continue;
+
+      var rowNum = i + 1;
+      sheet.getRange(rowNum, EVT.SYNC_STATUS + 1).setValue('deleted');
+      sheet.getRange(rowNum, EVT.UPDATED_AT + 1).setValue(ts);
+      sheet.getRange(rowNum, EVT.UPDATED_BY + 1).setValue('google');
+      tombstoned++;
+      Logger.log('Tombstoned stranded master: "' + (data[i][EVT.TITLE] || '(untitled)') +
+                 '" [googleEventId=' + data[i][EVT.GOOGLE_EVENT_ID] +
+                 ', startTime=' + data[i][EVT.START_TIME] + ']');
+    } catch(e) {}
+  }
+
+  Logger.log('Done. Tombstoned ' + tombstoned + ' orphaned master row(s). ' +
+             'cleanupDeletedRows_ will reclaim them within 7 days.');
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────────
