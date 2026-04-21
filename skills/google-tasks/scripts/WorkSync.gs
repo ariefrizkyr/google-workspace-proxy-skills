@@ -353,11 +353,30 @@ function pullTaskLists_(startTime) {
   }
 
   try {
-    var googleLists = Tasks.Tasklists.list({ maxResults: 100 });
-    if (!googleLists.items) return;
+    // Paginate to fetch ALL lists — required for safe upstream-deletion detection.
+    var allLists = [];
+    var pageToken = null;
+    var listsFullyFetched = true;
+    var pages = 0;
+    var MAX_PAGES = 20;
+    do {
+      if (isTimedOut_(startTime)) { listsFullyFetched = false; break; }
+      var opts = { maxResults: 100 };
+      if (pageToken) opts.pageToken = pageToken;
+      var page = Tasks.Tasklists.list(opts);
+      if (page.items) {
+        for (var k = 0; k < page.items.length; k++) allLists.push(page.items[k]);
+      }
+      pageToken = page.nextPageToken;
+      pages++;
+      if (pages >= MAX_PAGES && pageToken) { listsFullyFetched = false; break; }
+    } while (pageToken);
 
-    googleLists.items.forEach(function(gl) {
+    var seenListIds = {};
+
+    allLists.forEach(function(gl) {
       if (isTimedOut_(startTime)) return;
+      seenListIds[gl.id] = true;
       var rowNum = existing[gl.id];
       if (rowNum) {
         // Existing list — update if Google has newer data and row is synced
@@ -381,6 +400,25 @@ function pullTaskLists_(startTime) {
         ]);
       }
     });
+
+    // Detect upstream list deletions: synced rows whose googleListId was not returned.
+    // Tasks belonging to these lists will be handled on the next sync cycle once the
+    // list row is marked 'deleted' (pullTasks_ skips deleted lists, and cleanup removes
+    // orphan task rows separately via the per-list detection in pullTasks_).
+    if (listsFullyFetched && !isTimedOut_(startTime)) {
+      var staleTs = new Date(0).toISOString();
+      var nowTs = new Date().toISOString();
+      for (var i = 1; i < data.length; i++) {
+        var gid = data[i][1];
+        var status = data[i][3];
+        if (gid && status === 'synced' && !seenListIds[gid]) {
+          sheet.getRange(i + 1, 4).setValue('deleted');  // syncStatus
+          sheet.getRange(i + 1, 5).setValue(staleTs);    // updatedAt (force immediate cleanup)
+          sheet.getRange(i + 1, 6).setValue(nowTs);      // syncedAt
+          sheet.getRange(i + 1, 7).setValue('google');   // updatedBy
+        }
+      }
+    }
   } catch (err) {
     Logger.log('Error pulling task lists: ' + err.message);
   }
@@ -405,6 +443,17 @@ function pullTasks_(startTime) {
     if (taskData[i][1]) googleToSheetId[taskData[i][1]] = taskData[i][0];
   }
 
+  // sheetListId → row numbers of synced rows (for upstream-deletion detection).
+  var syncedRowsByList = {};
+  for (var i = 1; i < taskData.length; i++) {
+    var rowListId = taskData[i][2];
+    var rowStatus = taskData[i][12];
+    if (rowListId && rowStatus === 'synced') {
+      if (!syncedRowsByList[rowListId]) syncedRowsByList[rowListId] = [];
+      syncedRowsByList[rowListId].push(i + 1);
+    }
+  }
+
   for (var li = 1; li < listData.length; li++) {
     if (isTimedOut_(startTime)) break;
     var googleListId = listData[li][1];
@@ -413,15 +462,31 @@ function pullTasks_(startTime) {
     if (!googleListId || listSyncStatus === 'deleted' || listSyncStatus === 'pending_delete') continue;
 
     try {
-      var googleTasks = Tasks.Tasks.list(googleListId, {
-        maxResults: 100,
-        showCompleted: true,
-        showHidden: true
-      });
-      if (!googleTasks.items) continue;
+      // Paginate to fetch ALL tasks for this list. Without the full set we cannot
+      // safely detect upstream deletions (unseen tasks could just be on a later page).
+      var allItems = [];
+      var pageToken = null;
+      var listFullyFetched = true;
+      var pages = 0;
+      var MAX_PAGES = 20;
+      do {
+        if (isTimedOut_(startTime)) { listFullyFetched = false; break; }
+        var opts = { maxResults: 100, showCompleted: true, showHidden: true };
+        if (pageToken) opts.pageToken = pageToken;
+        var page = Tasks.Tasks.list(googleListId, opts);
+        if (page.items) {
+          for (var k = 0; k < page.items.length; k++) allItems.push(page.items[k]);
+        }
+        pageToken = page.nextPageToken;
+        pages++;
+        if (pages >= MAX_PAGES && pageToken) { listFullyFetched = false; break; }
+      } while (pageToken);
 
-      googleTasks.items.forEach(function(gt) {
+      var seenGoogleIds = {};
+
+      allItems.forEach(function(gt) {
         if (isTimedOut_(startTime)) return;
+        seenGoogleIds[gt.id] = true;
         var rowNum = taskMap[gt.id];
 
         if (rowNum) {
@@ -479,6 +544,25 @@ function pullTasks_(startTime) {
           taskMap[gt.id] = taskSheet.getLastRow();
         }
       });
+
+      // Detect upstream deletions: rows present for this list with syncStatus=synced
+      // but whose googleTaskId was not returned by Google. Only runs when we have
+      // the complete task set for this list (avoids false-positives from truncated pages).
+      if (listFullyFetched && !isTimedOut_(startTime) && syncedRowsByList[sheetListId]) {
+        var staleTs = new Date(0).toISOString();
+        var nowTs = new Date().toISOString();
+        var rows = syncedRowsByList[sheetListId];
+        for (var r = 0; r < rows.length; r++) {
+          var rn = rows[r];
+          var gid = taskData[rn - 1][1];
+          if (gid && !seenGoogleIds[gid]) {
+            taskSheet.getRange(rn, 13).setValue('deleted'); // M: syncStatus
+            taskSheet.getRange(rn, 14).setValue(staleTs);   // N: updatedAt (force immediate cleanup)
+            taskSheet.getRange(rn, 15).setValue(nowTs);     // O: syncedAt
+            taskSheet.getRange(rn, 16).setValue('google');  // P: updatedBy
+          }
+        }
+      }
     } catch (err) {
       Logger.log('Error pulling tasks for list ' + googleListId + ': ' + err.message);
     }
